@@ -181,7 +181,7 @@ fun EditorScreen(
                             FilterChip(
                                 selected = uiState.currentState.activeFilter == preset,
                                 onClick = { viewModel.setFilter(preset) },
-                                label = { Text(preset.name.lowercase().capitalize()) },
+                                label = { Text(preset.name.lowercase().replaceFirstChar { it.uppercase() }) },
                                 shape = RoundedCornerShape(16.dp)
                             )
                         }

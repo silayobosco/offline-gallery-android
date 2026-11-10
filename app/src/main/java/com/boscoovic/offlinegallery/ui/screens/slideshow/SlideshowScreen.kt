@@ -14,7 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -128,10 +129,14 @@ fun SlideshowScreen(
                 }
 
                 listOf(2L, 3L, 5L).forEach { sec ->
-                    AssistChip(
+                    FilterChip(
                         selected = intervalSeconds == sec,
                         onClick = { intervalSeconds = sec },
-                        label = { Text("${sec}s", color = if (intervalSeconds == sec) MaterialTheme.colorScheme.primary else Color.White) }
+                        label = { Text("${sec}s") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     )
                 }
             }
