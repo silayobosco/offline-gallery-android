@@ -69,12 +69,13 @@ fun GalleryNavGraph(
                 )
             }
         },
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = Screen.Pictures.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
         ) {
             // Pictures Tab
             composable(Screen.Pictures.route) {

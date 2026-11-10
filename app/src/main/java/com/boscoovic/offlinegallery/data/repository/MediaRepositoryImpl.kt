@@ -444,6 +444,18 @@ class MediaRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun overwriteOriginalImage(sourceItem: MediaItem, bitmap: Bitmap): Boolean = withContext(Dispatchers.IO) {
+        try {
+            contentResolver.openOutputStream(sourceItem.uri, "rwt")?.use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            } ?: return@withContext false
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     override suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean = withContext(Dispatchers.IO) {
         for (item in items) {
             try {

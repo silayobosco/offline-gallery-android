@@ -33,6 +33,14 @@ enum class EditorTool {
     DRAW
 }
 
+enum class CropAspectRatio(val label: String, val ratio: Float?) {
+    FREE("Free", null),
+    SQUARE("1:1", 1f),
+    RATIO_4_3("4:3", 4f / 3f),
+    RATIO_16_9("16:9", 16f / 9f),
+    RATIO_9_16("9:16", 9f / 16f)
+}
+
 enum class FilterPreset {
     ORIGINAL,
     VIVID,
@@ -64,7 +72,8 @@ data class EditorUiState(
     val sourceItem: MediaItem? = null,
     val originalBitmap: Bitmap? = null,
     val previewBitmap: Bitmap? = null,
-    val currentTool: EditorTool = EditorTool.ADJUST,
+    val currentTool: EditorTool = EditorTool.CROP_ROTATE,
+    val selectedCropRatio: CropAspectRatio = CropAspectRatio.FREE,
     val currentState: EditorState = EditorState(),
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
@@ -84,8 +93,8 @@ class EditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
-    private val undoStack = mutableListOf<EditorState>()
-    private val redoStack = mutableListOf<EditorState>()
+    private val undoStack = mutableListOf<Pair<Bitmap, EditorState>>()
+    private val redoStack = mutableListOf<Pair<Bitmap, EditorState>>()
 
     init {
         loadBitmap()
@@ -114,6 +123,33 @@ class EditorViewModel @Inject constructor(
 
     fun selectTool(tool: EditorTool) {
         _uiState.value = _uiState.value.copy(currentTool = tool)
+    }
+
+    fun setCropAspectRatio(ratio: CropAspectRatio) {
+        _uiState.value = _uiState.value.copy(selectedCropRatio = ratio)
+    }
+
+    fun applyCrop(leftFraction: Float, topFraction: Float, rightFraction: Float, bottomFraction: Float) {
+        val bmp = _uiState.value.previewBitmap ?: return
+        val currentLeft = (bmp.width * leftFraction.coerceIn(0f, 1f)).toInt()
+        val currentTop = (bmp.height * topFraction.coerceIn(0f, 1f)).toInt()
+        val currentRight = (bmp.width * rightFraction.coerceIn(0f, 1f)).toInt()
+        val currentBottom = (bmp.height * bottomFraction.coerceIn(0f, 1f)).toInt()
+
+        val width = (currentRight - currentLeft).coerceAtLeast(10)
+        val height = (currentBottom - currentTop).coerceAtLeast(10)
+
+        pushUndo()
+        try {
+            val cropped = Bitmap.createBitmap(bmp, currentLeft, currentTop, width, height)
+            _uiState.value = _uiState.value.copy(
+                originalBitmap = cropped,
+                previewBitmap = cropped,
+                canUndo = true
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun rotate90() {
@@ -168,36 +204,51 @@ class EditorViewModel @Inject constructor(
 
     fun undo() {
         if (undoStack.isNotEmpty()) {
-            redoStack.add(_uiState.value.currentState)
-            val previous = undoStack.removeAt(undoStack.lastIndex)
-            applyState(previous, updateStacks = false)
+            val currentBmp = _uiState.value.originalBitmap ?: return
+            redoStack.add(Pair(currentBmp, _uiState.value.currentState))
+            val (previousBmp, previousState) = undoStack.removeAt(undoStack.lastIndex)
+            _uiState.value = _uiState.value.copy(
+                originalBitmap = previousBmp,
+                currentState = previousState,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = true
+            )
+            renderPreview(previousState, previousBmp)
         }
     }
 
     fun redo() {
         if (redoStack.isNotEmpty()) {
-            undoStack.add(_uiState.value.currentState)
-            val next = redoStack.removeAt(redoStack.lastIndex)
-            applyState(next, updateStacks = false)
+            val currentBmp = _uiState.value.originalBitmap ?: return
+            undoStack.add(Pair(currentBmp, _uiState.value.currentState))
+            val (nextBmp, nextState) = redoStack.removeAt(redoStack.lastIndex)
+            _uiState.value = _uiState.value.copy(
+                originalBitmap = nextBmp,
+                currentState = nextState,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty()
+            )
+            renderPreview(nextState, nextBmp)
         }
     }
 
     private fun pushUndo() {
-        undoStack.add(_uiState.value.currentState)
+        val currentBmp = _uiState.value.originalBitmap ?: return
+        undoStack.add(Pair(currentBmp, _uiState.value.currentState))
         redoStack.clear()
     }
 
-    private fun applyState(state: EditorState, updateStacks: Boolean = true) {
+    private fun applyState(state: EditorState) {
         _uiState.value = _uiState.value.copy(
             currentState = state,
-            canUndo = undoStack.isNotEmpty(),
+            canUndo = true,
             canRedo = redoStack.isNotEmpty()
         )
-        renderPreview(state)
+        renderPreview(state, _uiState.value.originalBitmap)
     }
 
-    private fun renderPreview(state: EditorState) {
-        val src = _uiState.value.originalBitmap ?: return
+    private fun renderPreview(state: EditorState, srcBmp: Bitmap?) {
+        val src = srcBmp ?: return
         viewModelScope.launch(Dispatchers.Default) {
             val processed = applyEditsToBitmap(src, state)
             withContext(Dispatchers.Main) {
@@ -216,13 +267,9 @@ class EditorViewModel @Inject constructor(
         val output = Bitmap.createBitmap(transformed.width, transformed.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        // Color adjustments & Filters
         val colorMatrix = ColorMatrix()
-
-        // Saturation
         colorMatrix.setSaturation(state.saturation)
 
-        // Contrast & Brightness
         val scale = state.contrast
         val translate = state.brightness
         val contrastMatrix = ColorMatrix(
@@ -235,7 +282,6 @@ class EditorViewModel @Inject constructor(
         )
         colorMatrix.postConcat(contrastMatrix)
 
-        // Preset filter overlay
         when (state.activeFilter) {
             FilterPreset.BW -> {
                 val bw = ColorMatrix().apply { setSaturation(0f) }
@@ -297,7 +343,6 @@ class EditorViewModel @Inject constructor(
         }
         canvas.drawBitmap(transformed, 0f, 0f, paint)
 
-        // Draw overlay strokes
         val drawPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
@@ -325,5 +370,18 @@ class EditorViewModel @Inject constructor(
             }
         }
     }
-}
 
+    fun saveAsDefault(onSuccess: () -> Unit) {
+        val srcItem = _uiState.value.sourceItem ?: return
+        val finalBitmap = _uiState.value.previewBitmap ?: return
+
+        _uiState.value = _uiState.value.copy(isSaving = true)
+        viewModelScope.launch {
+            val success = repository.overwriteOriginalImage(srcItem, finalBitmap)
+            _uiState.value = _uiState.value.copy(isSaving = false)
+            if (success) {
+                onSuccess()
+            }
+        }
+    }
+}

@@ -3,11 +3,13 @@ package com.boscoovic.offlinegallery.ui.screens.viewer
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +42,7 @@ import com.boscoovic.offlinegallery.data.model.MediaItem
 @Composable
 fun VideoPlayerView(
     item: MediaItem,
+    isActive: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -49,8 +53,18 @@ fun VideoPlayerView(
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(Media3Item.fromUri(item.uri))
             prepare()
-            playWhenReady = true
+            playWhenReady = false
             repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            exoPlayer.playWhenReady = true
+            exoPlayer.play()
+        } else {
+            exoPlayer.playWhenReady = false
+            exoPlayer.pause()
         }
     }
 
@@ -63,6 +77,7 @@ fun VideoPlayerView(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            exoPlayer.pause()
             exoPlayer.release()
         }
     }
@@ -87,23 +102,26 @@ fun VideoPlayerView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Center play/pause floating action button
-        IconButton(
-            onClick = {
-                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
-            },
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f))
+        // Show play icon when paused
+        AnimatedVisibility(
+            visible = !isPlaying && isActive,
+            enter = fadeIn(),
+            exit = fadeOut()
         ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(36.dp)
-            )
+            IconButton(
+                onClick = { exoPlayer.play() },
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(44.dp)
+                )
+            }
         }
     }
 }
-

@@ -34,6 +34,7 @@ interface MediaRepository {
     suspend fun clearRecentSearches()
     suspend fun getExifData(item: MediaItem): ExifData
     suspend fun saveEditedImage(sourceItem: MediaItem, bitmap: Bitmap): Uri?
+    suspend fun overwriteOriginalImage(sourceItem: MediaItem, bitmap: Bitmap): Boolean
     suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
     suspend fun moveMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
 }

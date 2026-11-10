@@ -37,8 +37,8 @@ fun ZoomableImage(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
-                    onDoubleTap = { tapOffset ->
-                        if (scale > 1f) {
+                    onDoubleTap = {
+                        if (scale > 1.05f) {
                             scale = 1f
                             offset = Offset.Zero
                         } else {
@@ -47,21 +47,25 @@ fun ZoomableImage(
                     }
                 )
             }
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val newScale = (scale * zoom).coerceIn(1f, 5f)
-                    val maxOffset = (newScale - 1f) * 1000f
-                    val newOffset = if (newScale > 1f) {
-                        Offset(
-                            (offset.x + pan.x).coerceIn(-maxOffset, maxOffset),
-                            (offset.y + pan.y).coerceIn(-maxOffset, maxOffset)
-                        )
-                    } else Offset.Zero
+            .then(
+                if (scale > 1.05f) {
+                    Modifier.pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            val maxOffset = (newScale - 1f) * 1000f
+                            val newOffset = if (newScale > 1.05f) {
+                                Offset(
+                                    (offset.x + pan.x).coerceIn(-maxOffset, maxOffset),
+                                    (offset.y + pan.y).coerceIn(-maxOffset, maxOffset)
+                                )
+                            } else Offset.Zero
 
-                    scale = newScale
-                    offset = newOffset
-                }
-            },
+                            scale = newScale
+                            offset = newOffset
+                        }
+                    }
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
@@ -82,4 +86,3 @@ fun ZoomableImage(
         )
     }
 }
-
