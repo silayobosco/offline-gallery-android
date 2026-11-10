@@ -1,0 +1,12 @@
+package com.boscoovic.offlinegallery.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "recent_searches")
+data class RecentSearchEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0L,
+    val query: String,
+    val searchedAt: Long = System.currentTimeMillis()
+)

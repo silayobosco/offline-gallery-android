@@ -1,0 +1,60 @@
+<resources>
+    <string name="app_name">Gallery</string>
+    <string name="pictures">Pictures</string>
+    <string name="albums">Albums</string>
+    <string name="stories">Stories</string>
+    <string name="favorites">Favorites</string>
+    <string name="secure_folder">Secure Folder</string>
+    <string name="recycle_bin">Recycle Bin</string>
+    <string name="settings">Settings</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Search photos, albums, dates...</string>
+    <string name="all">All</string>
+    <string name="photos">Photos</string>
+    <string name="videos">Videos</string>
+    <string name="items_count">%1$d items</string>
+    <string name="selected_count">%1$d selected</string>
+    
+    <!-- Actions -->
+    <string name="share">Share</string>
+    <string name="favorite">Favorite</string>
+    <string name="unfavorite">Unfavorite</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="more">More</string>
+    <string name="details">Details</string>
+    <string name="slideshow">Slideshow</string>
+    <string name="move_to_album">Move to album</string>
+    <string name="copy_to_album">Copy to album</string>
+    <string name="hide">Hide to Secure Folder</string>
+    <string name="restore">Restore</string>
+    <string name="empty_bin">Empty Bin</string>
+    <string name="create_album">Create album</string>
+    <string name="album_name">Album name</string>
+    <string name="rename">Rename</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="save_copy">Save as copy</string>
+    <string name="reset">Reset</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+
+    <!-- Permissions -->
+    <string name="permission_title">Access Photos and Videos</string>
+    <string name="permission_desc">To display and manage your photos and videos completely offline, Gallery needs access to your device storage.</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="partial_access_banner">You granted access to selected photos only. Tap to grant full library access.</string>
+    <string name="manage_access">Manage</string>
+
+    <!-- Biometric / Secure -->
+    <string name="biometric_prompt_title">Unlock Secure Folder</string>
+    <string name="biometric_prompt_subtitle">Use biometric credential or PIN/pattern to access hidden items</string>
+
+    <!-- Empty States -->
+    <string name="no_media">No photos or videos found</string>
+    <string name="no_favorites">No favorites yet</string>
+    <string name="no_trash">Recycle Bin is empty</string>
+    <string name="no_hidden">No secure items</string>
+    <string name="trash_disclaimer">Items in the Recycle Bin will be permanently deleted after 30 days.</string>
+    <string name="days_left">%1$d days left</string>
+</resources>
