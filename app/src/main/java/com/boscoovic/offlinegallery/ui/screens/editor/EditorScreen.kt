@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -176,6 +177,7 @@ fun EditorScreen(
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
+            val localDensity = LocalDensity.current
             val totalWidthPx = constraints.maxWidth.toFloat()
             val totalHeightPx = constraints.maxHeight.toFloat()
 
@@ -193,6 +195,8 @@ fun EditorScreen(
                     val boxH = totalHeightPx * (cropBottom - cropTop)
                     val offsetX = totalWidthPx * cropLeft
                     val offsetY = totalHeightPx * cropTop
+                    val boxWDp = with(localDensity) { boxW.toDp() }
+                    val boxHDp = with(localDensity) { boxH.toDp() }
 
                     Box(
                         modifier = Modifier
@@ -202,7 +206,7 @@ fun EditorScreen(
                         Box(
                             modifier = Modifier
                                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                                .size(width = (boxW / density).dp, height = (boxH / density).dp)
+                                .size(width = boxWDp, height = boxHDp)
                                 .border(2.dp, Color.White, RoundedCornerShape(4.dp))
                                 .pointerInput(Unit) {
                                     detectDragGestures { change, dragAmount ->
