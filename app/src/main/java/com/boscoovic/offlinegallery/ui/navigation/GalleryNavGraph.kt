@@ -46,9 +46,7 @@ fun GalleryNavGraph(
 
     val bottomBarRoutes = listOf(
         Screen.Pictures.route,
-        Screen.Albums.route,
-        Screen.Stories.route,
-        Screen.Search.route
+        Screen.Albums.route
     )
     val showBottomBar = currentRoute in bottomBarRoutes
 
@@ -84,6 +82,9 @@ fun GalleryNavGraph(
                     viewModel = viewModel,
                     onMediaClick = { item ->
                         navController.navigate(Screen.Viewer.createRoute(item.id, "ALL", ""))
+                    },
+                    onSearchClick = {
+                        navController.navigate(Screen.Search.route)
                     }
                 )
             }
@@ -104,6 +105,9 @@ fun GalleryNavGraph(
                     },
                     onRecycleBinClick = {
                         navController.navigate(Screen.RecycleBin.route)
+                    },
+                    onSearchClick = {
+                        navController.navigate(Screen.Search.route)
                     }
                 )
             }
@@ -122,8 +126,11 @@ fun GalleryNavGraph(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onMediaClick = { item ->
-                        val contextType = if (viewModel.isCustom) "CUSTOM_ALBUM" else "ALBUM"
-                        navController.navigate(Screen.Viewer.createRoute(item.id, contextType, viewModel.albumId.toString()))
+                        val contextType = if (viewModel.uiState.value.isCustom) "CUSTOM_ALBUM" else "ALBUM"
+                        navController.navigate(Screen.Viewer.createRoute(item.id, contextType, viewModel.uiState.value.albumId.toString()))
+                    },
+                    onSearchClick = {
+                        navController.navigate(Screen.Search.route)
                     }
                 )
             }

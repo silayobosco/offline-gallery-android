@@ -1,10 +1,8 @@
 package com.boscoovic.offlinegallery.ui.components
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -44,24 +42,5 @@ fun BottomNavigationBar(
                 indicatorColor = MaterialTheme.colorScheme.primaryContainer
             )
         )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Stories.route,
-            onClick = { onNavigate(Screen.Stories) },
-            icon = { Icon(Icons.Default.AutoAwesome, contentDescription = stringResource(R.string.stories)) },
-            label = { Text(stringResource(R.string.stories)) },
-            colors = NavigationBarItemDefaults.colors(
-                indicatorColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Search.route,
-            onClick = { onNavigate(Screen.Search) },
-            icon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search)) },
-            label = { Text(stringResource(R.string.search)) },
-            colors = NavigationBarItemDefaults.colors(
-                indicatorColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        )
     }
 }
-

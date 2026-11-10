@@ -1,5 +1,8 @@
 package com.boscoovic.offlinegallery.ui.screens.viewer
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
@@ -45,27 +48,35 @@ fun ZoomableImage(
                 if (scale > 1.05f) {
                     Modifier.pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
-                            val targetScale = (scale * zoom).coerceIn(1f, 5f)
-                            scale = targetScale
-                            if (targetScale <= 1.05f) {
-                                scale = 1f
-                                offset = Offset.Zero
-                            } else {
-                                val maxOffsetX = (targetScale - 1f) * 600f
-                                val maxOffsetY = (targetScale - 1f) * 800f
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = newScale
+                            if (newScale > 1.05f) {
+                                val maxOffsetX = (newScale - 1f) * 600f
+                                val maxOffsetY = (newScale - 1f) * 800f
                                 offset = Offset(
                                     (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX),
                                     (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
                                 )
+                            } else {
+                                scale = 1f
+                                offset = Offset.Zero
                             }
                         }
                     }
                 } else {
                     Modifier.pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ ->
-                            if (zoom > 1.05f) {
-                                scale = zoom.coerceIn(1f, 5f)
-                            }
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            do {
+                                val event = awaitPointerEvent()
+                                if (event.changes.size >= 2) {
+                                    val zoom = event.calculateZoom()
+                                    if (zoom > 1.05f) {
+                                        scale = zoom.coerceIn(1f, 5f)
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
                         }
                     }
                 }

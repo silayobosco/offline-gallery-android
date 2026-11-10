@@ -32,6 +32,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem as Media3Item
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -49,6 +52,7 @@ fun VideoPlayerView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var isPlaying by remember { mutableStateOf(false) }
 
     val exoPlayer = remember(item.uri) {
@@ -60,6 +64,7 @@ fun VideoPlayerView(
         }
     }
 
+    // React to pager active page change
     LaunchedEffect(isActive) {
         if (isActive) {
             exoPlayer.playWhenReady = true
@@ -70,14 +75,34 @@ fun VideoPlayerView(
         }
     }
 
-    DisposableEffect(exoPlayer) {
+    // Stop sound when switching apps / activity in background
+    DisposableEffect(lifecycleOwner, exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
         }
         exoPlayer.addListener(listener)
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    exoPlayer.playWhenReady = false
+                    exoPlayer.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (isActive) {
+                        exoPlayer.playWhenReady = true
+                        exoPlayer.play()
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             exoPlayer.removeListener(listener)
             exoPlayer.pause()
             exoPlayer.release()

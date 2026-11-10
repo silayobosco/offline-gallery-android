@@ -5,7 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -24,10 +24,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +57,7 @@ import com.boscoovic.offlinegallery.ui.components.StickyDateHeader
 fun PicturesScreen(
     viewModel: PicturesViewModel,
     onMediaClick: (MediaItem) -> Unit,
+    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -81,20 +84,36 @@ fun PicturesScreen(
             }
     ) {
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-            // One UI Header
+            // Top Bar with Search action
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onSearchClick) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // Samsung One UI Reachability Viewing Area
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = stringResource(R.string.pictures),
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 28.sp),
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 34.sp),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = stringResource(R.string.items_count, uiState.totalCount),
                     style = MaterialTheme.typography.bodyMedium,
@@ -106,7 +125,7 @@ fun PicturesScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MediaFilter.values().forEach { filter ->
@@ -208,11 +227,10 @@ fun PicturesScreen(
                 onSelectAll = { viewModel.selectAll(allItems) },
                 onShare = { viewModel.shareSelected(allItems) },
                 onFavorite = { viewModel.favoriteSelected(allItems) },
-                onMove = { /* Move to album picker dialog */ },
+                onMove = { /* Move to album */ },
                 onHide = { viewModel.hideSelected(allItems) },
                 onDelete = { viewModel.deleteSelected(allItems) }
             )
         }
     }
 }
-
