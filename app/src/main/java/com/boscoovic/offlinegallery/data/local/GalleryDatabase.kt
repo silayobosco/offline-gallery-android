@@ -29,3 +29,4 @@ abstract class GalleryDatabase : RoomDatabase() {
     abstract fun customAlbumDao(): CustomAlbumDao
     abstract fun recentSearchDao(): RecentSearchDao
 }
+

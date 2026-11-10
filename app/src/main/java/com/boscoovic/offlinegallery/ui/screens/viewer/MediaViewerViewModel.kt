@@ -157,3 +157,4 @@ class MediaViewerViewModel @Inject constructor(
             return if (idx in list.indices) list[idx] else null
         }
 }
+

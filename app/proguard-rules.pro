@@ -9,3 +9,4 @@
 
 # Keep Biometric
 -keep class androidx.biometric.** { *; }
+

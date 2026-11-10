@@ -45,3 +45,4 @@ interface CustomAlbumDao {
     @Query("SELECT COUNT(*) FROM custom_album_items WHERE albumId = :albumId")
     fun getAlbumItemCount(albumId: Long): Flow<Int>
 }
+

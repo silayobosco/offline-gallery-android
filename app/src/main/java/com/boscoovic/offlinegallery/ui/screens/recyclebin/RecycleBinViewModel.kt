@@ -80,3 +80,4 @@ class RecycleBinViewModel @Inject constructor(
         }
     }
 }
+

@@ -4,3 +4,4 @@ enum class MediaType {
     IMAGE,
     VIDEO
 }
+

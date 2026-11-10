@@ -226,3 +226,4 @@ fun SecureFolderScreen(
         }
     }
 }
+

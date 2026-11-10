@@ -181,3 +181,4 @@ private fun DetailRow(
         }
     }
 }
+

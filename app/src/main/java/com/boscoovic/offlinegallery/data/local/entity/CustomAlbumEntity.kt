@@ -11,3 +11,4 @@ data class CustomAlbumEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val coverMediaId: Long? = null
 )
+

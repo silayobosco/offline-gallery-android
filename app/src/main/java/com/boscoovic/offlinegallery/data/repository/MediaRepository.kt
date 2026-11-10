@@ -37,3 +37,4 @@ interface MediaRepository {
     suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
     suspend fun moveMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
 }
+

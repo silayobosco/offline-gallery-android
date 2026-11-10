@@ -181,3 +181,4 @@ class PicturesViewModel @Inject constructor(
             .map { DateGroup(dateMillis = it.key, items = it.value) }
     }
 }
+

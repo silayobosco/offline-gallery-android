@@ -6,3 +6,4 @@ enum class MediaFilter {
     VIDEOS,
     FAVORITES
 }
+

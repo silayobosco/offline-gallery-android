@@ -44,3 +44,4 @@ class MediaStoreObserver @Inject constructor(
         }
     }
 }
+

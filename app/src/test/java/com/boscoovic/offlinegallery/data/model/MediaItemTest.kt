@@ -47,3 +47,4 @@ class MediaItemTest {
         assertEquals("2.5 MB", imageItem.formattedSize)
     }
 }
+

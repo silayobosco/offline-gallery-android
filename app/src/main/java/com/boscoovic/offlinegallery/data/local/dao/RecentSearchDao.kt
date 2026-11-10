@@ -22,3 +22,4 @@ interface RecentSearchDao {
     @Query("DELETE FROM recent_searches")
     suspend fun clearAll()
 }
+

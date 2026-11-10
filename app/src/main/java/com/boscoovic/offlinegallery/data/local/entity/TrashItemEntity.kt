@@ -18,3 +18,4 @@ data class TrashItemEntity(
     val durationMs: Long = 0L,
     val trashedFilePath: String
 )
+

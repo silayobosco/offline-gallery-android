@@ -41,3 +41,4 @@ interface MediaMetaDao {
     @Query("DELETE FROM media_meta WHERE mediaId NOT IN (:activeMediaIds)")
     suspend fun reconcileActive(activeMediaIds: List<Long>)
 }
+

@@ -10,3 +10,4 @@ data class Album(
     val isCustom: Boolean = false,
     val relativePath: String? = null
 )
+

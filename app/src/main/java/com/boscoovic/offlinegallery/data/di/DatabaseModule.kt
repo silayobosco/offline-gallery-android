@@ -40,3 +40,4 @@ object DatabaseModule {
     @Provides
     fun provideRecentSearchDao(db: GalleryDatabase): RecentSearchDao = db.recentSearchDao()
 }
+

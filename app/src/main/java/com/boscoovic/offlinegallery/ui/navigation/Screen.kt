@@ -28,3 +28,4 @@ sealed class Screen(val route: String) {
             "slideshow?contextType=$contextType&contextArg=${java.net.URLEncoder.encode(contextArg, "UTF-8")}"
     }
 }
+

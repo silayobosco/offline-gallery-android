@@ -55,3 +55,4 @@ class SecureFolderViewModel @Inject constructor(
         }
     }
 }
+

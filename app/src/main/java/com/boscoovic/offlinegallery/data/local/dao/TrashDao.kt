@@ -40,3 +40,4 @@ interface TrashDao {
     @Query("DELETE FROM trash_items")
     suspend fun clearAll()
 }
+

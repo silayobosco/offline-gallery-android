@@ -13,3 +13,4 @@ data class MediaMetaEntity(
     val cachedLng: Double? = null,
     val cachedExifJson: String? = null
 )
+

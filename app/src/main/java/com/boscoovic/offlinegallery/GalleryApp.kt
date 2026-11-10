@@ -67,3 +67,4 @@ class GalleryApp : Application(), ImageLoaderFactory, Configuration.Provider {
         )
     }
 }
+

@@ -31,3 +31,4 @@ val DarkOnSurfaceVariant = Color(0xFFC5C6D0)
 val FavoriteRed = Color(0xFFE53935)
 val DurationBadgeBg = Color(0x99000000)
 val SelectionOverlay = Color(0x4D1E60DE)
+

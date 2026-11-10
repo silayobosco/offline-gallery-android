@@ -33,3 +33,4 @@ data class ExifData(
             return if (parts.isNotEmpty()) parts.joinToString("  •  ") else null
         }
 }
+
