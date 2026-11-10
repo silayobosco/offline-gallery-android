@@ -25,6 +25,7 @@ import com.boscoovic.offlinegallery.data.model.MediaItem
 fun ZoomableImage(
     item: MediaItem,
     onTap: () -> Unit,
+    onDoubleTapLike: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -37,34 +38,37 @@ fun ZoomableImage(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
-                    onDoubleTap = {
-                        if (scale > 1.05f) {
-                            scale = 1f
-                            offset = Offset.Zero
-                        } else {
-                            scale = 2.5f
-                        }
-                    }
+                    onDoubleTap = { onDoubleTapLike() }
                 )
             }
             .then(
                 if (scale > 1.05f) {
                     Modifier.pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
-                            val newScale = (scale * zoom).coerceIn(1f, 5f)
-                            val maxOffset = (newScale - 1f) * 1000f
-                            val newOffset = if (newScale > 1.05f) {
-                                Offset(
-                                    (offset.x + pan.x).coerceIn(-maxOffset, maxOffset),
-                                    (offset.y + pan.y).coerceIn(-maxOffset, maxOffset)
+                            val targetScale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = targetScale
+                            if (targetScale <= 1.05f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                val maxOffsetX = (targetScale - 1f) * 600f
+                                val maxOffsetY = (targetScale - 1f) * 800f
+                                offset = Offset(
+                                    (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX),
+                                    (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
                                 )
-                            } else Offset.Zero
-
-                            scale = newScale
-                            offset = newOffset
+                            }
                         }
                     }
-                } else Modifier
+                } else {
+                    Modifier.pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            if (zoom > 1.05f) {
+                                scale = zoom.coerceIn(1f, 5f)
+                            }
+                        }
+                    }
+                }
             ),
         contentAlignment = Alignment.Center
     ) {

@@ -121,6 +121,13 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    fun setFavorite(isFavorite: Boolean) {
+        val current = currentItem ?: return
+        viewModelScope.launch {
+            repository.toggleFavorite(current.id, isFavorite)
+        }
+    }
+
     fun deleteCurrent(onDeleted: () -> Unit) {
         val current = currentItem ?: return
         viewModelScope.launch {

@@ -1,6 +1,10 @@
 package com.boscoovic.offlinegallery.ui.screens.viewer
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -21,7 +25,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -42,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
@@ -59,7 +64,7 @@ import androidx.compose.ui.unit.sp
 import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
-import kotlin.math.abs
+import kotlinx.coroutines.delay
 
 @Composable
 fun MediaViewerScreen(
@@ -71,6 +76,30 @@ fun MediaViewerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    // Heart pop animation state for double-tap liking
+    var heartAnimTrigger by remember { mutableLongStateOf(0L) }
+    val heartScale = remember { Animatable(0f) }
+    val heartAlpha = remember { Animatable(0f) }
+
+    LaunchedEffect(heartAnimTrigger) {
+        if (heartAnimTrigger > 0) {
+            heartScale.snapTo(0.2f)
+            heartAlpha.snapTo(1f)
+            // Spring bounce up to 1.3f
+            heartScale.animateTo(
+                targetValue = 1.3f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            )
+            // Settle and fade out
+            delay(150)
+            heartAlpha.animateTo(0f, animationSpec = tween(350))
+            heartScale.snapTo(0f)
+        }
+    }
 
     if (uiState.items.isEmpty()) {
         Box(
@@ -97,8 +126,13 @@ fun MediaViewerScreen(
 
     val currentItem = uiState.items.getOrNull(pagerState.currentPage)
 
-    // Horizontal swipe gesture detection for Details (Swipe Right) & Delete (Swipe Left)
+    // Gesture detection: Swipe Left (< -120f) for Details, Swipe Right (> 120f) to Delete
     var totalHorizontalDrag by remember { mutableFloatStateOf(0f) }
+
+    val handleDoubleTapLike = {
+        viewModel.setFavorite(true)
+        heartAnimTrigger = System.currentTimeMillis()
+    }
 
     Box(
         modifier = modifier
@@ -108,11 +142,11 @@ fun MediaViewerScreen(
                 detectHorizontalDragGestures(
                     onDragStart = { totalHorizontalDrag = 0f },
                     onDragEnd = {
-                        if (totalHorizontalDrag > 120f) {
-                            // Swipe right -> Open details
+                        if (totalHorizontalDrag < -120f) {
+                            // Swiped Left -> Open Details
                             viewModel.toggleDetailsSheet(true)
-                        } else if (totalHorizontalDrag < -120f) {
-                            // Swipe left -> Prompt delete
+                        } else if (totalHorizontalDrag > 120f) {
+                            // Swiped Right -> Prompt Delete
                             showDeleteConfirmDialog = true
                         }
                         totalHorizontalDrag = 0f
@@ -135,14 +169,33 @@ fun MediaViewerScreen(
                 VideoPlayerView(
                     item = item,
                     isActive = isActive,
-                    onTap = { viewModel.toggleChrome() }
+                    onTap = { viewModel.toggleChrome() },
+                    onDoubleTapLike = handleDoubleTapLike
                 )
             } else {
                 ZoomableImage(
                     item = item,
-                    onTap = { viewModel.toggleChrome() }
+                    onTap = { viewModel.toggleChrome() },
+                    onDoubleTapLike = handleDoubleTapLike
                 )
             }
+        }
+
+        // Bouncy Heart Pop Animation overlay on double-tap
+        if (heartAlpha.value > 0f) {
+            Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = null,
+                tint = FavoriteRed,
+                modifier = Modifier
+                    .size(110.dp)
+                    .align(Alignment.Center)
+                    .graphicsLayer(
+                        scaleX = heartScale.value,
+                        scaleY = heartScale.value,
+                        alpha = heartAlpha.value
+                    )
+            )
         }
 
         // Top Controls Header (Edge-to-Edge with statusBarsPadding)
@@ -226,7 +279,7 @@ fun MediaViewerScreen(
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        text = "Swipe right for details, swipe left to delete",
+                        text = "Swipe left for details, swipe right to delete",
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 11.sp
                     )
@@ -234,7 +287,7 @@ fun MediaViewerScreen(
             }
         }
 
-        // TikTok-style Vertical Action Buttons (Lower Right)
+        // TikTok-style Vertical Action Column (Lower Right)
         AnimatedVisibility(
             visible = uiState.isChromeVisible && currentItem != null,
             enter = fadeIn(),
@@ -251,9 +304,15 @@ fun MediaViewerScreen(
                 // Favorite
                 TikTokActionButton(
                     icon = if (currentItem?.isFavorite == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    label = if (currentItem?.isFavorite == true) "Favorited" else "Favorite",
+                    label = if (currentItem?.isFavorite == true) "Liked" else "Like",
                     iconTint = if (currentItem?.isFavorite == true) FavoriteRed else Color.White,
-                    onClick = { viewModel.toggleFavorite() }
+                    onClick = {
+                        val newFav = !(currentItem?.isFavorite ?: false)
+                        viewModel.toggleFavorite()
+                        if (newFav) {
+                            heartAnimTrigger = System.currentTimeMillis()
+                        }
+                    }
                 )
 
                 // Share
