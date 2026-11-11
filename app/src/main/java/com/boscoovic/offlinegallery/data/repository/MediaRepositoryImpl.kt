@@ -457,15 +457,22 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean = withContext(Dispatchers.IO) {
+        val targetRelativePath = when {
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> "${Environment.DIRECTORY_DCIM}/Camera"
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> "${Environment.DIRECTORY_PICTURES}/Screenshots"
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> Environment.DIRECTORY_DOWNLOADS
+            else -> "${Environment.DIRECTORY_PICTURES}/$targetDirectoryName"
+        }
+
         for (item in items) {
             try {
                 val isVideo = item.mediaType == MediaType.VIDEO
                 val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, "COPY_${item.displayName}")
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, item.displayName)
                     put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/$targetDirectoryName")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
                         put(MediaStore.MediaColumns.IS_PENDING, 1)
                     }
                 }

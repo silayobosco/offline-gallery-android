@@ -38,6 +38,8 @@ import com.boscoovic.offlinegallery.ui.theme.DurationBadgeBg
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
 import com.boscoovic.offlinegallery.ui.theme.SelectionOverlay
 
+import androidx.compose.foundation.clickable
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaThumbnail(
@@ -45,7 +47,7 @@ fun MediaThumbnail(
     isSelectionMode: Boolean,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -54,9 +56,15 @@ fun MediaThumbnail(
         modifier = modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(4.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
+                } else {
+                    Modifier.clickable(onClick = onClick)
+                }
             )
     ) {
         AsyncImage(

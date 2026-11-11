@@ -309,15 +309,15 @@ fun AlbumDetailScreen(
                                         }
                                         .then(
                                             if (uiState.isSelectionMode) {
-                                                Modifier.pointerInput(uiState.selectedItemIds, uiState.items) {
+                                                Modifier.pointerInput(uiState.isSelectionMode, uiState.selectedItemIds) {
                                                     detectDragGesturesAfterLongPress(
                                                         onDragStart = { localOffset ->
-                                                            // When selection is on, drag all selected items (or this item if clicked)
-                                                            val itemsToMove = if (uiState.selectedItemIds.contains(item.id)) {
-                                                                uiState.items.filter { uiState.selectedItemIds.contains(it.id) }
-                                                            } else {
+                                                            // When selection is on, drag all selected items (or this item if touched)
+                                                            if (!uiState.selectedItemIds.contains(item.id)) {
                                                                 viewModel.toggleItemSelection(item.id)
-                                                                listOf(item)
+                                                            }
+                                                            val itemsToMove = uiState.items.filter {
+                                                                uiState.selectedItemIds.contains(it.id) || it.id == item.id
                                                             }
                                                             draggedItems = itemsToMove
                                                             dragPosition = itemPosInRoot + localOffset
@@ -330,7 +330,13 @@ fun AlbumDetailScreen(
                                                         onDrag = { change, dragAmount ->
                                                             change.consume()
                                                             dragPosition += dragAmount
-                                                            val hovered = albumBounds.entries.firstOrNull { it.value.contains(dragPosition) }?.key
+                                                            val hovered = albumBounds.entries.firstOrNull { entry ->
+                                                                val rect = entry.value
+                                                                // Generous hit detection over the sidebar area on the left
+                                                                dragPosition.x <= (rect.right + 60f) &&
+                                                                dragPosition.y >= (rect.top - 20f) &&
+                                                                dragPosition.y <= (rect.bottom + 20f)
+                                                            }?.key
                                                             hoveredAlbumId = if (hovered != null && hovered != uiState.albumId) hovered else null
                                                         },
                                                         onDragEnd = {
@@ -369,8 +375,8 @@ fun AlbumDetailScreen(
                                                 onMediaClick(item)
                                             }
                                         },
-                                        onLongClick = {
-                                            viewModel.toggleItemSelection(item.id)
+                                        onLongClick = if (uiState.isSelectionMode) null else {
+                                            { viewModel.toggleItemSelection(item.id) }
                                         }
                                     )
                                 }
