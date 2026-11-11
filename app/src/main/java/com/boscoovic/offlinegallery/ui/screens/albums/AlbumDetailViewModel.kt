@@ -124,5 +124,22 @@ class AlbumDetailViewModel @Inject constructor(
         }
     }
 
+    fun moveOrAddItemsToAlbum(targetAlbum: Album, items: List<MediaItem>, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            if (targetAlbum.isCustom) {
+                repository.addItemsToCustomAlbum(targetAlbum.id, items.map { it.id })
+                onComplete("Added ${items.size} item(s) to ${targetAlbum.name}")
+            } else {
+                val success = repository.moveMedia(items, targetAlbum.name)
+                if (success) {
+                    onComplete("Moved ${items.size} item(s) to ${targetAlbum.name}")
+                } else {
+                    onComplete("Failed to move items to ${targetAlbum.name}")
+                }
+            }
+            clearSelection()
+        }
+    }
+
     private data class Tuple4<A, B, C, D>(val v1: A, val v2: B, val v3: C, val v4: D)
 }
