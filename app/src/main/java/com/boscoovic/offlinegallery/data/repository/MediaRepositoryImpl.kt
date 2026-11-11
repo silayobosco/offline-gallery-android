@@ -600,29 +600,49 @@ class MediaRepositoryImpl @Inject constructor(
         performMoveToDirectory(items, targetDir)
     }
 
+    private fun extractRelativePath(targetDir: File, fallbackAlbumName: String): String {
+        val path = try { targetDir.canonicalPath } catch (e: Exception) { targetDir.absolutePath }
+        val standardDirs = listOf("DCIM", "Pictures", "Movies", "Download", "Downloads", "Documents")
+        for (std in standardDirs) {
+            val index = path.indexOf("/$std/", ignoreCase = true)
+            if (index != -1) {
+                val rel = path.substring(index + 1)
+                return if (rel.endsWith('/')) rel else "$rel/"
+            }
+            if (path.endsWith("/$std", ignoreCase = true)) {
+                return "$std/"
+            }
+        }
+        val storageRoot = Environment.getExternalStorageDirectory()
+        val rootPath = try { storageRoot.canonicalPath } catch (e: Exception) { storageRoot.absolutePath }
+        val trimmed = if (path.startsWith(rootPath)) {
+            path.removePrefix(rootPath).trimStart(File.separatorChar, '/')
+        } else {
+            fallbackAlbumName
+        }
+        val result = if (trimmed.isNotBlank()) trimmed else "${Environment.DIRECTORY_PICTURES}/$fallbackAlbumName"
+        return if (result.endsWith('/')) result else "$result/"
+    }
+
     private suspend fun performMoveToDirectory(items: List<MediaItem>, targetDir: File): Boolean = withContext(Dispatchers.IO) {
         if (!targetDir.exists()) {
             targetDir.mkdirs()
         }
 
-        val storageRoot = Environment.getExternalStorageDirectory()
-        val rootCanonical = try { storageRoot.canonicalPath } catch (e: Exception) { storageRoot.absolutePath }
         val targetCanonical = try { targetDir.canonicalPath } catch (e: Exception) { targetDir.absolutePath }
-
-        var relativePath = if (targetCanonical.startsWith(rootCanonical)) {
-            targetCanonical.removePrefix(rootCanonical).trimStart(File.separatorChar, '/')
-        } else {
-            targetDir.absolutePath.removePrefix(storageRoot.absolutePath).trimStart(File.separatorChar, '/')
-        }
-        if (!relativePath.endsWith('/')) {
-            relativePath += "/"
-        }
+        val relativePath = extractRelativePath(targetDir, targetDir.name)
 
         var anySuccess = false
-        val newFilesToScan = mutableListOf<String>()
 
         for (item in items) {
             try {
+                val isVideo = item.mediaType == MediaType.VIDEO
+                val collectionUri = if (isVideo) {
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                } else {
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                }
+
                 val sourceFile = File(item.path)
                 if (sourceFile.parentFile?.canonicalPath == targetCanonical) {
                     // Item already in destination directory
@@ -631,115 +651,142 @@ class MediaRepositoryImpl @Inject constructor(
                 }
 
                 // Determine unique destination file name
-                var targetFile = File(targetDir, item.displayName)
+                var targetDisplayName = item.displayName
+                var targetFile = File(targetDir, targetDisplayName)
                 if (targetFile.exists()) {
                     val baseName = targetFile.nameWithoutExtension
                     val ext = if (targetFile.extension.isNotEmpty()) ".${targetFile.extension}" else ""
                     var counter = 1
-                    while (targetFile.exists()) {
-                        targetFile = File(targetDir, "${baseName}_$counter$ext")
+                    while (File(targetDir, "${baseName}_$counter$ext").exists()) {
                         counter++
                     }
+                    targetDisplayName = "${baseName}_$counter$ext"
+                    targetFile = File(targetDir, targetDisplayName)
                 }
 
                 var moved = false
 
-                // Attempt 1: Direct atomic filesystem rename
-                if (sourceFile.exists()) {
-                    try {
-                        if (sourceFile.renameTo(targetFile)) {
-                            moved = true
-                            newFilesToScan.add(targetFile.absolutePath)
-                            try {
-                                contentResolver.delete(item.uri, null, null)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                // Attempt 2: Direct file copy + delete source file
-                if (!moved && sourceFile.exists()) {
-                    try {
-                        sourceFile.inputStream().use { input ->
-                            targetFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        if (targetFile.exists() && targetFile.length() > 0) {
-                            sourceFile.delete()
-                            moved = true
-                            newFilesToScan.add(targetFile.absolutePath)
-                            try {
-                                contentResolver.delete(item.uri, null, null)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                // Attempt 3: In-place MediaStore RELATIVE_PATH update (Scoped Storage)
-                if (!moved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // ===================================================================
+                // STRATEGY 1: MediaStore In-Place RELATIVE_PATH Update (Android 10+)
+                // Fast, atomic, preserves all DB metadata & IDs, no byte copying!
+                // MediaStore physically moves the file and updates bucket_id.
+                // ===================================================================
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     try {
                         val updateValues = ContentValues().apply {
                             put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                            if (targetFile.name != item.displayName) {
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                            if (targetDisplayName != item.displayName) {
+                                put(MediaStore.MediaColumns.DISPLAY_NAME, targetDisplayName)
                             }
                         }
                         val rows = contentResolver.update(item.uri, updateValues, null, null)
                         if (rows > 0) {
                             moved = true
-                            // NOTE: DO NOT delete item.uri because MediaStore updated it in place!
-                            newFilesToScan.add(targetFile.absolutePath)
+                            // NOTE: DO NOT delete item.uri! MediaStore updated it in place!
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
 
-                // Attempt 4: MediaStore insert copy + delete
+                // ===================================================================
+                // STRATEGY 2: MediaStore Insert + Stream Copy + Delete Source
+                // Guarantees immediate MediaStore indexing in destination folder!
+                // ===================================================================
                 if (!moved) {
                     try {
-                        val isVideo = item.mediaType == MediaType.VIDEO
-                        val collection = if (isVideo) {
-                            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                        } else {
-                            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                        }
-                        val values = ContentValues().apply {
-                            put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                        val insertValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, targetDisplayName)
                             put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                                 put(MediaStore.MediaColumns.IS_PENDING, 1)
                             }
                         }
-                        val newUri = contentResolver.insert(collection, values)
+                        val newUri = contentResolver.insert(collectionUri, insertValues)
                         if (newUri != null) {
-                            contentResolver.openInputStream(item.uri)?.use { input ->
-                                contentResolver.openOutputStream(newUri)?.use { output ->
+                            var copySuccess = false
+                            try {
+                                contentResolver.openInputStream(item.uri)?.use { inStream ->
+                                    contentResolver.openOutputStream(newUri)?.use { outStream ->
+                                        inStream.copyTo(outStream)
+                                        copySuccess = true
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+
+                            if (copySuccess) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    val finalizeValues = ContentValues().apply {
+                                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                                    }
+                                    contentResolver.update(newUri, finalizeValues, null, null)
+                                }
+
+                                // Migrate favorites/hidden metadata
+                                try {
+                                    val newId = ContentUris.parseId(newUri)
+                                    val meta = metaDao.getMeta(item.id)
+                                    if (meta != null) {
+                                        metaDao.insertOrUpdate(meta.copy(mediaId = newId))
+                                        metaDao.delete(item.id)
+                                    }
+                                } catch (ignored: Exception) {}
+
+                                // Delete source record and source file
+                                try {
+                                    contentResolver.delete(item.uri, null, null)
+                                } catch (ignored: Exception) {}
+                                if (sourceFile.exists()) {
+                                    try { sourceFile.delete() } catch (ignored: Exception) {}
+                                }
+
+                                moved = true
+                            } else {
+                                try { contentResolver.delete(newUri, null, null) } catch (ignored: Exception) {}
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // ===================================================================
+                // STRATEGY 3: Filesystem Fallback (Android < Q or storage fallback)
+                // ===================================================================
+                if (!moved && sourceFile.exists()) {
+                    try {
+                        var fsMoved = false
+                        if (sourceFile.renameTo(targetFile)) {
+                            fsMoved = true
+                        } else {
+                            sourceFile.inputStream().use { input ->
+                                targetFile.outputStream().use { output ->
                                     input.copyTo(output)
                                 }
                             }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                values.clear()
-                                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                                contentResolver.update(newUri, values, null, null)
+                            if (targetFile.exists() && targetFile.length() > 0) {
+                                sourceFile.delete()
+                                fsMoved = true
                             }
-                            moved = true
+                        }
+                        if (fsMoved) {
                             try {
                                 contentResolver.delete(item.uri, null, null)
                             } catch (ignored: Exception) {}
-                            if (sourceFile.exists()) {
-                                try { sourceFile.delete() } catch (ignored: Exception) {}
+
+                            val legacyValues = ContentValues().apply {
+                                put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
+                                put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                                put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
                             }
+                            try {
+                                contentResolver.insert(collectionUri, legacyValues)
+                            } catch (ignored: Exception) {}
+
+                            moved = true
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -754,51 +801,34 @@ class MediaRepositoryImpl @Inject constructor(
             }
         }
 
-        // Rescan all newly placed files so MediaStore indices and albums refresh immediately
-        if (newFilesToScan.isNotEmpty()) {
-            val latch = java.util.concurrent.CountDownLatch(newFilesToScan.size)
-            val scannedUris = java.util.concurrent.ConcurrentHashMap<String, Uri>()
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                newFilesToScan.toTypedArray(),
-                null
-            ) { path, uri ->
-                if (uri != null) {
-                    scannedUris[path] = uri
-                }
-                latch.countDown()
-            }
-            try {
-                latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
-            } catch (ignored: Exception) {}
-
-            for (filePath in newFilesToScan) {
-                try {
+        // Rescan directory with explicit MIME types to index all files (and recover any unindexed files)
+        try {
+            val mediaFiles = targetDir.listFiles()?.filter {
+                it.isFile && !it.name.startsWith(".")
+            } ?: emptyList()
+            if (mediaFiles.isNotEmpty()) {
+                val paths = mediaFiles.map { it.absolutePath }.toTypedArray()
+                val mimes = mediaFiles.map { file ->
+                    when (file.extension.lowercase()) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        "gif" -> "image/gif"
+                        "mp4" -> "video/mp4"
+                        "mkv" -> "video/x-matroska"
+                        "mov" -> "video/quicktime"
+                        else -> "image/jpeg"
+                    }
+                }.toTypedArray()
+                android.media.MediaScannerConnection.scanFile(context, paths, mimes, null)
+                for (file in mediaFiles) {
                     val scanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).apply {
-                        data = Uri.fromFile(File(filePath))
+                        data = Uri.fromFile(file)
                     }
                     context.sendBroadcast(scanIntent)
-                } catch (ignored: Exception) {}
-            }
-
-            // Migrate favorite/hidden metadata to new media IDs if changed
-            for (item in items) {
-                val targetFile = File(targetDir, item.displayName)
-                val newUri = scannedUris[targetFile.absolutePath]
-                if (newUri != null) {
-                    try {
-                        val newId = ContentUris.parseId(newUri)
-                        if (newId != item.id) {
-                            val meta = metaDao.getMeta(item.id)
-                            if (meta != null) {
-                                metaDao.insertOrUpdate(meta.copy(mediaId = newId))
-                                metaDao.delete(item.id)
-                            }
-                        }
-                    } catch (ignored: Exception) {}
                 }
             }
-        }
+        } catch (ignored: Exception) {}
 
         anySuccess
     }
