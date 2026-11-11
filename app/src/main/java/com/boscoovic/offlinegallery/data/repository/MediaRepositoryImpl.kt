@@ -645,5 +645,169 @@ class MediaRepositoryImpl @Inject constructor(
         }
         anySuccess
     }
+
+    override suspend fun moveMediaToAlbum(items: List<MediaItem>, targetAlbum: Album): Boolean = withContext(Dispatchers.IO) {
+        if (targetAlbum.isCustom) {
+            addItemsToCustomAlbum(targetAlbum.id, items.map { it.id })
+            return@withContext true
+        }
+
+        // 1. Resolve exact physical target directory from an existing item in that album to never duplicate folders
+        val allRaw = fetcher.queryAllMedia()
+        val existingItem = allRaw.firstOrNull { it.bucketId == targetAlbum.id && it.path.isNotBlank() }
+        val targetDir: File = if (existingItem != null && File(existingItem.path).parentFile != null) {
+            File(existingItem.path).parentFile!!
+        } else {
+            when {
+                targetAlbum.name.equals("Camera", ignoreCase = true) ->
+                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
+                targetAlbum.name.equals("Screenshots", ignoreCase = true) ->
+                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots")
+                targetAlbum.name.equals("Download", ignoreCase = true) || targetAlbum.name.equals("Downloads", ignoreCase = true) ->
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                else ->
+                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetAlbum.name)
+            }
+        }
+
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        val rootPath = Environment.getExternalStorageDirectory().absolutePath
+        var targetRelativePath = targetDir.absolutePath.removePrefix(rootPath).trimStart('/')
+        if (!targetRelativePath.endsWith('/')) {
+            targetRelativePath += "/"
+        }
+
+        var anySuccess = false
+        val scannedPaths = mutableListOf<String>()
+
+        for (item in items) {
+            try {
+                val sourceFile = File(item.path)
+                if (sourceFile.parentFile?.absolutePath == targetDir.absolutePath) {
+                    // Already in this album
+                    anySuccess = true
+                    continue
+                }
+
+                // Collision avoidance: unique file name in target
+                var targetFile = File(targetDir, item.displayName)
+                if (targetFile.exists()) {
+                    val nameWithoutExt = targetFile.nameWithoutExtension
+                    val ext = targetFile.extension
+                    var counter = 1
+                    while (targetFile.exists()) {
+                        targetFile = File(targetDir, "${nameWithoutExt}_$counter.$ext")
+                        counter++
+                    }
+                }
+
+                var moved = false
+
+                // Attempt 1: Direct atomic rename on filesystem
+                if (sourceFile.exists()) {
+                    try {
+                        if (sourceFile.renameTo(targetFile)) {
+                            moved = true
+                            scannedPaths.add(sourceFile.absolutePath)
+                            scannedPaths.add(targetFile.absolutePath)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Attempt 2: Stream copy bytes + delete source
+                if (!moved && sourceFile.exists()) {
+                    try {
+                        sourceFile.inputStream().use { input ->
+                            targetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (targetFile.exists() && targetFile.length() > 0) {
+                            sourceFile.delete()
+                            moved = true
+                            scannedPaths.add(sourceFile.absolutePath)
+                            scannedPaths.add(targetFile.absolutePath)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Attempt 3: In-place MediaStore RELATIVE_PATH update
+                if (!moved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val updateValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+                        }
+                        val rows = contentResolver.update(item.uri, updateValues, null, null)
+                        if (rows > 0) {
+                            moved = true
+                            scannedPaths.add(item.path)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Attempt 4: MediaStore insert copy + delete
+                if (!moved) {
+                    val isVideo = item.mediaType == MediaType.VIDEO
+                    val collection = if (isVideo) {
+                        MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    } else {
+                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    }
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+                            put(MediaStore.MediaColumns.IS_PENDING, 1)
+                        }
+                    }
+                    val newUri = contentResolver.insert(collection, values)
+                    if (newUri != null) {
+                        contentResolver.openInputStream(item.uri)?.use { input ->
+                            contentResolver.openOutputStream(newUri)?.use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            values.clear()
+                            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            contentResolver.update(newUri, values, null, null)
+                        }
+                        moved = true
+                        scannedPaths.add(sourceFile.absolutePath)
+                    }
+                }
+
+                if (moved) {
+                    anySuccess = true
+                    try {
+                        contentResolver.delete(item.uri, null, null)
+                    } catch (ignored: Exception) {}
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Rescan all modified paths so MediaStore triggers observer and updates albums instantly
+        if (scannedPaths.isNotEmpty()) {
+            android.media.MediaScannerConnection.scanFile(
+                context,
+                scannedPaths.toTypedArray(),
+                null
+            ) { _, _ -> }
+        }
+
+        anySuccess
+    }
 }
 

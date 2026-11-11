@@ -37,5 +37,6 @@ interface MediaRepository {
     suspend fun overwriteOriginalImage(sourceItem: MediaItem, bitmap: Bitmap): Boolean
     suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
     suspend fun moveMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean
+    suspend fun moveMediaToAlbum(items: List<MediaItem>, targetAlbum: Album): Boolean
 }
 

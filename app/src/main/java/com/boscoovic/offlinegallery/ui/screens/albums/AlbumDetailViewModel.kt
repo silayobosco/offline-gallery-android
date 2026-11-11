@@ -133,7 +133,7 @@ class AlbumDetailViewModel @Inject constructor(
                 }
                 onComplete("Added ${items.size} item(s) to ${targetAlbum.name}")
             } else {
-                val success = repository.moveMedia(items, targetAlbum.name)
+                val success = repository.moveMediaToAlbum(items, targetAlbum)
                 if (_isCurrentCustom.value) {
                     repository.removeItemsFromCustomAlbum(_currentAlbumId.value, items.map { it.id })
                 }
