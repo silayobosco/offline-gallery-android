@@ -1,7 +1,9 @@
 package com.boscoovic.offlinegallery.data.repository
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -548,102 +550,23 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun moveMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean = withContext(Dispatchers.IO) {
-        val targetRelativePath = when {
-            targetDirectoryName.equals("Camera", ignoreCase = true) -> "${Environment.DIRECTORY_DCIM}/Camera/"
-            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> "${Environment.DIRECTORY_PICTURES}/Screenshots/"
-            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> "${Environment.DIRECTORY_DOWNLOADS}/"
-            else -> "${Environment.DIRECTORY_PICTURES}/$targetDirectoryName/"
-        }
+        val dcimDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), targetDirectoryName)
+        val picDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetDirectoryName)
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
         val targetDir = when {
-            targetDirectoryName.equals("Camera", ignoreCase = true) -> 
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
-            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> 
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots")
-            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> 
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            else -> 
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetDirectoryName)
-        }
-        if (!targetDir.exists()) {
-            targetDir.mkdirs()
-        }
-
-        var anySuccess = false
-        for (item in items) {
-            try {
-                var moved = false
-                val sourceFile = File(item.path)
-                val targetFile = File(targetDir, item.displayName)
-
-                // 1. Direct filesystem atomic move
-                if (sourceFile.exists()) {
-                    try {
-                        if (sourceFile.renameTo(targetFile)) {
-                            moved = true
-                            android.media.MediaScannerConnection.scanFile(
-                                context,
-                                arrayOf(sourceFile.absolutePath, targetFile.absolutePath),
-                                null,
-                                null
-                            )
-                            try {
-                                contentResolver.delete(item.uri, null, null)
-                            } catch (ignored: Exception) {}
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                // 2. Try MediaStore RELATIVE_PATH update if rename wasn't possible
-                if (!moved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    try {
-                        val updateValues = ContentValues().apply {
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
-                        }
-                        val rows = contentResolver.update(item.uri, updateValues, null, null)
-                        if (rows > 0) {
-                            moved = true
-                            // Scan paths to update bucket cache immediately
-                            android.media.MediaScannerConnection.scanFile(
-                                context,
-                                arrayOf(item.path),
-                                null,
-                                null
-                            )
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                // 3. Fallback: Copy to destination, delete source, and re-scan
-                if (!moved) {
-                    val copied = copyMedia(listOf(item), targetDirectoryName)
-                    if (copied) {
-                        moved = true
-                        if (sourceFile.exists()) {
-                            try { sourceFile.delete() } catch (ignored: Exception) {}
-                        }
-                        try {
-                            contentResolver.delete(item.uri, null, null)
-                        } catch (ignored: Exception) {}
-                        android.media.MediaScannerConnection.scanFile(
-                            context,
-                            arrayOf(sourceFile.absolutePath),
-                            null,
-                            null
-                        )
-                    }
-                }
-
-                if (moved) anySuccess = true
-            } catch (e: Exception) {
-                e.printStackTrace()
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> dcimDir
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> {
+                val dcimScreenshots = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots")
+                if (dcimScreenshots.exists()) dcimScreenshots else picDir
             }
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> downloadDir
+            dcimDir.exists() -> dcimDir
+            picDir.exists() -> picDir
+            else -> picDir
         }
-        anySuccess
+
+        performMoveToDirectory(items, targetDir)
     }
 
     override suspend fun moveMediaToAlbum(items: List<MediaItem>, targetAlbum: Album): Boolean = withContext(Dispatchers.IO) {
@@ -658,68 +581,87 @@ class MediaRepositoryImpl @Inject constructor(
         val targetDir: File = if (existingItem != null && File(existingItem.path).parentFile != null) {
             File(existingItem.path).parentFile!!
         } else {
+            val dcimDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), targetAlbum.name)
+            val picDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetAlbum.name)
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             when {
-                targetAlbum.name.equals("Camera", ignoreCase = true) ->
-                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
-                targetAlbum.name.equals("Screenshots", ignoreCase = true) ->
-                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots")
-                targetAlbum.name.equals("Download", ignoreCase = true) || targetAlbum.name.equals("Downloads", ignoreCase = true) ->
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                else ->
-                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetAlbum.name)
+                dcimDir.exists() -> dcimDir
+                picDir.exists() -> picDir
+                targetAlbum.name.equals("Camera", ignoreCase = true) -> dcimDir
+                targetAlbum.name.equals("Screenshots", ignoreCase = true) -> {
+                    val dcimScreenshots = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots")
+                    if (dcimScreenshots.exists()) dcimScreenshots else picDir
+                }
+                targetAlbum.name.equals("Download", ignoreCase = true) || targetAlbum.name.equals("Downloads", ignoreCase = true) -> downloadDir
+                else -> picDir
             }
         }
 
+        performMoveToDirectory(items, targetDir)
+    }
+
+    private suspend fun performMoveToDirectory(items: List<MediaItem>, targetDir: File): Boolean = withContext(Dispatchers.IO) {
         if (!targetDir.exists()) {
             targetDir.mkdirs()
         }
 
-        val rootPath = Environment.getExternalStorageDirectory().absolutePath
-        var targetRelativePath = targetDir.absolutePath.removePrefix(rootPath).trimStart('/')
-        if (!targetRelativePath.endsWith('/')) {
-            targetRelativePath += "/"
+        val storageRoot = Environment.getExternalStorageDirectory()
+        val rootCanonical = try { storageRoot.canonicalPath } catch (e: Exception) { storageRoot.absolutePath }
+        val targetCanonical = try { targetDir.canonicalPath } catch (e: Exception) { targetDir.absolutePath }
+
+        var relativePath = if (targetCanonical.startsWith(rootCanonical)) {
+            targetCanonical.removePrefix(rootCanonical).trimStart(File.separatorChar, '/')
+        } else {
+            targetDir.absolutePath.removePrefix(storageRoot.absolutePath).trimStart(File.separatorChar, '/')
+        }
+        if (!relativePath.endsWith('/')) {
+            relativePath += "/"
         }
 
         var anySuccess = false
-        val scannedPaths = mutableListOf<String>()
+        val newFilesToScan = mutableListOf<String>()
 
         for (item in items) {
             try {
                 val sourceFile = File(item.path)
-                if (sourceFile.parentFile?.absolutePath == targetDir.absolutePath) {
-                    // Already in this album
+                if (sourceFile.parentFile?.canonicalPath == targetCanonical) {
+                    // Item already in destination directory
                     anySuccess = true
                     continue
                 }
 
-                // Collision avoidance: unique file name in target
+                // Determine unique destination file name
                 var targetFile = File(targetDir, item.displayName)
                 if (targetFile.exists()) {
-                    val nameWithoutExt = targetFile.nameWithoutExtension
-                    val ext = targetFile.extension
+                    val baseName = targetFile.nameWithoutExtension
+                    val ext = if (targetFile.extension.isNotEmpty()) ".${targetFile.extension}" else ""
                     var counter = 1
                     while (targetFile.exists()) {
-                        targetFile = File(targetDir, "${nameWithoutExt}_$counter.$ext")
+                        targetFile = File(targetDir, "${baseName}_$counter$ext")
                         counter++
                     }
                 }
 
                 var moved = false
 
-                // Attempt 1: Direct atomic rename on filesystem
+                // Attempt 1: Direct atomic filesystem rename
                 if (sourceFile.exists()) {
                     try {
                         if (sourceFile.renameTo(targetFile)) {
                             moved = true
-                            scannedPaths.add(sourceFile.absolutePath)
-                            scannedPaths.add(targetFile.absolutePath)
+                            newFilesToScan.add(targetFile.absolutePath)
+                            try {
+                                contentResolver.delete(item.uri, null, null)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
 
-                // Attempt 2: Stream copy bytes + delete source
+                // Attempt 2: Direct file copy + delete source file
                 if (!moved && sourceFile.exists()) {
                     try {
                         sourceFile.inputStream().use { input ->
@@ -730,24 +672,32 @@ class MediaRepositoryImpl @Inject constructor(
                         if (targetFile.exists() && targetFile.length() > 0) {
                             sourceFile.delete()
                             moved = true
-                            scannedPaths.add(sourceFile.absolutePath)
-                            scannedPaths.add(targetFile.absolutePath)
+                            newFilesToScan.add(targetFile.absolutePath)
+                            try {
+                                contentResolver.delete(item.uri, null, null)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
 
-                // Attempt 3: In-place MediaStore RELATIVE_PATH update
+                // Attempt 3: In-place MediaStore RELATIVE_PATH update (Scoped Storage)
                 if (!moved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     try {
                         val updateValues = ContentValues().apply {
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                            if (targetFile.name != item.displayName) {
+                                put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                            }
                         }
                         val rows = contentResolver.update(item.uri, updateValues, null, null)
                         if (rows > 0) {
                             moved = true
-                            scannedPaths.add(item.path)
+                            // NOTE: DO NOT delete item.uri because MediaStore updated it in place!
+                            newFilesToScan.add(targetFile.absolutePath)
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -756,55 +706,98 @@ class MediaRepositoryImpl @Inject constructor(
 
                 // Attempt 4: MediaStore insert copy + delete
                 if (!moved) {
-                    val isVideo = item.mediaType == MediaType.VIDEO
-                    val collection = if (isVideo) {
-                        MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    } else {
-                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    }
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
-                        put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
-                            put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    try {
+                        val isVideo = item.mediaType == MediaType.VIDEO
+                        val collection = if (isVideo) {
+                            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        } else {
+                            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
                         }
-                    }
-                    val newUri = contentResolver.insert(collection, values)
-                    if (newUri != null) {
-                        contentResolver.openInputStream(item.uri)?.use { input ->
-                            contentResolver.openOutputStream(newUri)?.use { output ->
-                                input.copyTo(output)
+                        val values = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, targetFile.name)
+                            put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                                put(MediaStore.MediaColumns.IS_PENDING, 1)
                             }
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            values.clear()
-                            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                            contentResolver.update(newUri, values, null, null)
+                        val newUri = contentResolver.insert(collection, values)
+                        if (newUri != null) {
+                            contentResolver.openInputStream(item.uri)?.use { input ->
+                                contentResolver.openOutputStream(newUri)?.use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                values.clear()
+                                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                                contentResolver.update(newUri, values, null, null)
+                            }
+                            moved = true
+                            try {
+                                contentResolver.delete(item.uri, null, null)
+                            } catch (ignored: Exception) {}
+                            if (sourceFile.exists()) {
+                                try { sourceFile.delete() } catch (ignored: Exception) {}
+                            }
                         }
-                        moved = true
-                        scannedPaths.add(sourceFile.absolutePath)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
 
                 if (moved) {
                     anySuccess = true
-                    try {
-                        contentResolver.delete(item.uri, null, null)
-                    } catch (ignored: Exception) {}
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        // Rescan all modified paths so MediaStore triggers observer and updates albums instantly
-        if (scannedPaths.isNotEmpty()) {
+        // Rescan all newly placed files so MediaStore indices and albums refresh immediately
+        if (newFilesToScan.isNotEmpty()) {
+            val latch = java.util.concurrent.CountDownLatch(newFilesToScan.size)
+            val scannedUris = java.util.concurrent.ConcurrentHashMap<String, Uri>()
             android.media.MediaScannerConnection.scanFile(
                 context,
-                scannedPaths.toTypedArray(),
+                newFilesToScan.toTypedArray(),
                 null
-            ) { _, _ -> }
+            ) { path, uri ->
+                if (uri != null) {
+                    scannedUris[path] = uri
+                }
+                latch.countDown()
+            }
+            try {
+                latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (ignored: Exception) {}
+
+            for (filePath in newFilesToScan) {
+                try {
+                    val scanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).apply {
+                        data = Uri.fromFile(File(filePath))
+                    }
+                    context.sendBroadcast(scanIntent)
+                } catch (ignored: Exception) {}
+            }
+
+            // Migrate favorite/hidden metadata to new media IDs if changed
+            for (item in items) {
+                val targetFile = File(targetDir, item.displayName)
+                val newUri = scannedUris[targetFile.absolutePath]
+                if (newUri != null) {
+                    try {
+                        val newId = ContentUris.parseId(newUri)
+                        if (newId != item.id) {
+                            val meta = metaDao.getMeta(item.id)
+                            if (meta != null) {
+                                metaDao.insertOrUpdate(meta.copy(mediaId = newId))
+                                metaDao.delete(item.id)
+                            }
+                        }
+                    } catch (ignored: Exception) {}
+                }
+            }
         }
 
         anySuccess
