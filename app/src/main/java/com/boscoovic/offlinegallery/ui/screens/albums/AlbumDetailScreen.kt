@@ -307,51 +307,56 @@ fun AlbumDetailScreen(
                                         .onGloballyPositioned { coords ->
                                             itemPosInRoot = coords.positionInRoot()
                                         }
-                                        .pointerInput(uiState.selectedItemIds, uiState.items) {
-                                            detectDragGesturesAfterLongPress(
-                                                onDragStart = { localOffset ->
-                                                    val itemsToMove = if (uiState.selectedItemIds.contains(item.id)) {
-                                                        uiState.items.filter { uiState.selectedItemIds.contains(it.id) }
-                                                    } else {
-                                                        if (!uiState.isSelectionMode) {
-                                                            viewModel.toggleItemSelection(item.id)
-                                                        }
-                                                        listOf(item)
-                                                    }
-                                                    draggedItems = itemsToMove
-                                                    dragPosition = itemPosInRoot + localOffset
-                                                    isDragging = true
-                                                    // Reveal sidebar if it was collapsed
-                                                    if (!uiState.isSidebarVisible) {
-                                                        viewModel.toggleSidebar(true)
-                                                    }
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dragPosition += dragAmount
-                                                    val hovered = albumBounds.entries.firstOrNull { it.value.contains(dragPosition) }?.key
-                                                    hoveredAlbumId = if (hovered != null && hovered != uiState.albumId) hovered else null
-                                                },
-                                                onDragEnd = {
-                                                    if (hoveredAlbumId != null) {
-                                                        val target = uiState.allAlbums.firstOrNull { it.id == hoveredAlbumId }
-                                                        if (target != null && target.id != uiState.albumId) {
-                                                            viewModel.moveOrAddItemsToAlbum(target, draggedItems) { msg ->
-                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        .then(
+                                            if (uiState.isSelectionMode) {
+                                                Modifier.pointerInput(uiState.selectedItemIds, uiState.items) {
+                                                    detectDragGesturesAfterLongPress(
+                                                        onDragStart = { localOffset ->
+                                                            // When selection is on, drag all selected items (or this item if clicked)
+                                                            val itemsToMove = if (uiState.selectedItemIds.contains(item.id)) {
+                                                                uiState.items.filter { uiState.selectedItemIds.contains(it.id) }
+                                                            } else {
+                                                                viewModel.toggleItemSelection(item.id)
+                                                                listOf(item)
                                                             }
+                                                            draggedItems = itemsToMove
+                                                            dragPosition = itemPosInRoot + localOffset
+                                                            isDragging = true
+                                                            // Reveal sidebar if it was collapsed
+                                                            if (!uiState.isSidebarVisible) {
+                                                                viewModel.toggleSidebar(true)
+                                                            }
+                                                        },
+                                                        onDrag = { change, dragAmount ->
+                                                            change.consume()
+                                                            dragPosition += dragAmount
+                                                            val hovered = albumBounds.entries.firstOrNull { it.value.contains(dragPosition) }?.key
+                                                            hoveredAlbumId = if (hovered != null && hovered != uiState.albumId) hovered else null
+                                                        },
+                                                        onDragEnd = {
+                                                            if (hoveredAlbumId != null) {
+                                                                val target = uiState.allAlbums.firstOrNull { it.id == hoveredAlbumId }
+                                                                if (target != null && target.id != uiState.albumId) {
+                                                                    viewModel.moveOrAddItemsToAlbum(target, draggedItems) { msg ->
+                                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                }
+                                                            }
+                                                            isDragging = false
+                                                            draggedItems = emptyList()
+                                                            hoveredAlbumId = null
+                                                        },
+                                                        onDragCancel = {
+                                                            isDragging = false
+                                                            draggedItems = emptyList()
+                                                            hoveredAlbumId = null
                                                         }
-                                                    }
-                                                    isDragging = false
-                                                    draggedItems = emptyList()
-                                                    hoveredAlbumId = null
-                                                },
-                                                onDragCancel = {
-                                                    isDragging = false
-                                                    draggedItems = emptyList()
-                                                    hoveredAlbumId = null
+                                                    )
                                                 }
-                                            )
-                                        }
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
                                 ) {
                                     MediaThumbnail(
                                         item = item,
