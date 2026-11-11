@@ -8,7 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -369,21 +371,34 @@ private fun PicturesTabContent(
     val allItems = remember(uiState.dateGroups) {
         uiState.dateGroups.flatMap { it.items }
     }
-    var scaleFactor by remember { mutableFloatStateOf(1f) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    scaleFactor *= zoom
-                    if (scaleFactor > 1.35f) {
-                        viewModel.setColumnCount(uiState.columnCount - 1)
-                        scaleFactor = 1f
-                    } else if (scaleFactor < 0.75f) {
-                        viewModel.setColumnCount(uiState.columnCount + 1)
-                        scaleFactor = 1f
-                    }
+            .pointerInput(uiState.columnCount) {
+                // Only consume pointer events when 2+ fingers are performing a pinch zoom to change columns.
+                // Single-finger horizontal swipes pass through to HorizontalPager to switch between Pictures & Albums!
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var accumulatedZoom = 1f
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.size >= 2) {
+                            val zoom = event.calculateZoom()
+                            accumulatedZoom *= zoom
+                            if (accumulatedZoom > 1.3f) {
+                                viewModel.setColumnCount(uiState.columnCount - 1)
+                                accumulatedZoom = 1f
+                                event.changes.forEach { it.consume() }
+                            } else if (accumulatedZoom < 0.77f) {
+                                viewModel.setColumnCount(uiState.columnCount + 1)
+                                accumulatedZoom = 1f
+                                event.changes.forEach { it.consume() }
+                            } else if (kotlin.math.abs(zoom - 1f) > 0.02f) {
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
     ) {
