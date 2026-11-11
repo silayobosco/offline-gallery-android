@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -51,12 +52,21 @@ fun SlideshowScreen(
     var currentIndex by remember { mutableIntStateOf(0) }
     var intervalSeconds by remember { mutableLongStateOf(3L) }
     var isPlaying by remember { mutableStateOf(true) }
+    var isShuffle by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
 
-    LaunchedEffect(isPlaying, currentIndex, intervalSeconds, items) {
+    LaunchedEffect(isPlaying, currentIndex, intervalSeconds, items, isShuffle) {
         if (isPlaying && items.isNotEmpty()) {
             delay(intervalSeconds * 1000L)
-            currentIndex = (currentIndex + 1) % items.size
+            currentIndex = if (isShuffle && items.size > 1) {
+                var next = (0 until items.size).random()
+                while (next == currentIndex) {
+                    next = (0 until items.size).random()
+                }
+                next
+            } else {
+                (currentIndex + 1) % items.size
+            }
         }
     }
 
@@ -125,6 +135,14 @@ fun SlideshowScreen(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = "Play/Pause",
                         tint = Color.White
+                    )
+                }
+
+                IconButton(onClick = { isShuffle = !isShuffle }) {
+                    Icon(
+                        imageVector = Icons.Default.Shuffle,
+                        contentDescription = "Shuffle",
+                        tint = if (isShuffle) MaterialTheme.colorScheme.primary else Color.White
                     )
                 }
 

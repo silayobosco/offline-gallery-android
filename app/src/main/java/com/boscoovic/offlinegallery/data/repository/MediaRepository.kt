@@ -15,6 +15,7 @@ interface MediaRepository {
     fun getAlbums(): Flow<List<Album>>
     fun getAlbumMedia(albumId: Long, isCustom: Boolean): Flow<List<MediaItem>>
     suspend fun toggleFavorite(mediaId: Long, isFavorite: Boolean)
+    suspend fun setHidden(mediaId: Long, isHidden: Boolean)
     suspend fun moveToTrash(items: List<MediaItem>): Boolean
     suspend fun restoreFromTrash(mediaIds: List<Long>): Boolean
     suspend fun permanentDeleteFromTrash(mediaIds: List<Long>): Boolean

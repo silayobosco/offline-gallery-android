@@ -155,6 +155,15 @@ class MediaRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun setHidden(mediaId: Long, isHidden: Boolean) = withContext(Dispatchers.IO) {
+        val existing = metaDao.getMeta(mediaId)
+        if (existing == null) {
+            metaDao.insertOrUpdate(MediaMetaEntity(mediaId = mediaId, isHidden = isHidden))
+        } else {
+            metaDao.setHidden(mediaId, isHidden)
+        }
+    }
+
     override suspend fun moveToTrash(items: List<MediaItem>): Boolean = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val expires = now + 30L * 24 * 60 * 60 * 1000 // 30 days retention

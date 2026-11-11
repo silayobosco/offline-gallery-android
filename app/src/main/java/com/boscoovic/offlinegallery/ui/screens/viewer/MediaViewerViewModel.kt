@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.ExifData
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
@@ -25,7 +26,10 @@ data class MediaViewerUiState(
     val currentIndex: Int = 0,
     val isChromeVisible: Boolean = true,
     val showDetailsSheet: Boolean = false,
-    val currentExif: ExifData? = null
+    val showMoreSheet: Boolean = false,
+    val isShuffleEnabled: Boolean = false,
+    val currentExif: ExifData? = null,
+    val allAlbums: List<Album> = emptyList()
 )
 
 @HiltViewModel
@@ -39,25 +43,36 @@ class MediaViewerViewModel @Inject constructor(
     private val contextType: String = savedStateHandle.get<String>("contextType") ?: "ALL"
     private val contextArg: String = savedStateHandle.get<String>("contextArg") ?: ""
 
+    private val _originalItems = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _items = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _currentIndex = MutableStateFlow(0)
     private val _isChromeVisible = MutableStateFlow(true)
     private val _showDetailsSheet = MutableStateFlow(false)
+    private val _showMoreSheet = MutableStateFlow(false)
+    private val _isShuffleEnabled = MutableStateFlow(false)
     private val _currentExif = MutableStateFlow<ExifData?>(null)
+    private val _allAlbums = MutableStateFlow<List<Album>>(emptyList())
 
     val uiState: StateFlow<MediaViewerUiState> = combine(
         _items,
         _currentIndex,
         _isChromeVisible,
         _showDetailsSheet,
-        _currentExif
-    ) { items, index, chrome, showDetails, exif ->
+        _showMoreSheet,
+        _isShuffleEnabled,
+        _currentExif,
+        _allAlbums
+    ) { args: Array<Any?> ->
+        @Suppress("UNCHECKED_CAST")
         MediaViewerUiState(
-            items = items,
-            currentIndex = index,
-            isChromeVisible = chrome,
-            showDetailsSheet = showDetails,
-            currentExif = exif
+            items = args[0] as List<MediaItem>,
+            currentIndex = args[1] as Int,
+            isChromeVisible = args[2] as Boolean,
+            showDetailsSheet = args[3] as Boolean,
+            showMoreSheet = args[4] as Boolean,
+            isShuffleEnabled = args[5] as Boolean,
+            currentExif = args[6] as ExifData?,
+            allAlbums = args[7] as List<Album>
         )
     }.stateIn(
         scope = viewModelScope,
@@ -67,6 +82,15 @@ class MediaViewerViewModel @Inject constructor(
 
     init {
         loadItems()
+        loadAlbums()
+    }
+
+    private fun loadAlbums() {
+        viewModelScope.launch {
+            repository.getAlbums().collect {
+                _allAlbums.value = it
+            }
+        }
     }
 
     private fun loadItems() {
@@ -85,15 +109,45 @@ class MediaViewerViewModel @Inject constructor(
             }
 
             flow.collect { list ->
-                _items.value = list
-                val targetIndex = list.indexOfFirst { it.id == initialMediaId }
-                if (targetIndex >= 0) {
-                    _currentIndex.value = targetIndex
-                    loadExif(list[targetIndex])
-                } else if (list.isNotEmpty()) {
+                _originalItems.value = list
+                if (_isShuffleEnabled.value) {
+                    val curr = currentItem
+                    val remaining = list.filter { it.id != curr?.id }.shuffled()
+                    val shuffledList = if (curr != null) listOf(curr) + remaining else remaining
+                    _items.value = shuffledList
                     _currentIndex.value = 0
-                    loadExif(list[0])
+                } else {
+                    _items.value = list
+                    val targetIndex = list.indexOfFirst { it.id == initialMediaId }
+                    if (targetIndex >= 0) {
+                        _currentIndex.value = targetIndex
+                        loadExif(list[targetIndex])
+                    } else if (list.isNotEmpty()) {
+                        _currentIndex.value = 0
+                        loadExif(list[0])
+                    }
                 }
+            }
+        }
+    }
+
+    fun toggleShuffle() {
+        val newShuffle = !_isShuffleEnabled.value
+        _isShuffleEnabled.value = newShuffle
+        val original = _originalItems.value
+        val current = currentItem
+        if (newShuffle) {
+            if (original.isNotEmpty()) {
+                val remaining = original.filter { it.id != current?.id }.shuffled()
+                val newList = if (current != null) listOf(current) + remaining else remaining
+                _items.value = newList
+                _currentIndex.value = 0
+            }
+        } else {
+            _items.value = original
+            val targetIdx = if (current != null) original.indexOfFirst { it.id == current.id } else -1
+            if (targetIdx >= 0) {
+                _currentIndex.value = targetIdx
             }
         }
     }
@@ -112,6 +166,10 @@ class MediaViewerViewModel @Inject constructor(
 
     fun toggleDetailsSheet(show: Boolean) {
         _showDetailsSheet.value = show
+    }
+
+    fun toggleMoreSheet(show: Boolean) {
+        _showMoreSheet.value = show
     }
 
     fun toggleFavorite() {
@@ -133,6 +191,58 @@ class MediaViewerViewModel @Inject constructor(
         viewModelScope.launch {
             repository.moveToTrash(listOf(current))
             onDeleted()
+        }
+    }
+
+    fun hideCurrent(onHidden: () -> Unit) {
+        val current = currentItem ?: return
+        viewModelScope.launch {
+            repository.setHidden(current.id, true)
+            onHidden()
+        }
+    }
+
+    fun moveCurrentToAlbum(targetAlbum: Album, onMoved: () -> Unit) {
+        val current = currentItem ?: return
+        viewModelScope.launch {
+            val success = repository.moveMediaToAlbum(listOf(current), targetAlbum)
+            if (success) {
+                onMoved()
+            }
+        }
+    }
+
+    fun useAs() {
+        val current = currentItem ?: return
+        try {
+            val intent = Intent(Intent.ACTION_ATTACH_DATA).apply {
+                setDataAndType(current.uri, current.mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra("mimeType", current.mimeType)
+            }
+            val chooser = Intent.createChooser(intent, "Use as").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun editIn(fallbackToInternal: (Long) -> Unit) {
+        val current = currentItem ?: return
+        try {
+            val intent = Intent(Intent.ACTION_EDIT).apply {
+                setDataAndType(current.uri, current.mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "Edit in").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            fallbackToInternal(current.id)
         }
     }
 
