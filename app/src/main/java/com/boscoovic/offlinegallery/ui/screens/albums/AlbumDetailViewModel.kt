@@ -128,9 +128,15 @@ class AlbumDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (targetAlbum.isCustom) {
                 repository.addItemsToCustomAlbum(targetAlbum.id, items.map { it.id })
+                if (_isCurrentCustom.value && _currentAlbumId.value != targetAlbum.id) {
+                    repository.removeItemsFromCustomAlbum(_currentAlbumId.value, items.map { it.id })
+                }
                 onComplete("Added ${items.size} item(s) to ${targetAlbum.name}")
             } else {
                 val success = repository.moveMedia(items, targetAlbum.name)
+                if (_isCurrentCustom.value) {
+                    repository.removeItemsFromCustomAlbum(_currentAlbumId.value, items.map { it.id })
+                }
                 if (success) {
                     onComplete("Moved ${items.size} item(s) to ${targetAlbum.name}")
                 } else {

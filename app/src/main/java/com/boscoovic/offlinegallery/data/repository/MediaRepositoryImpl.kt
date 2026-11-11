@@ -458,52 +458,192 @@ class MediaRepositoryImpl @Inject constructor(
 
     override suspend fun copyMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean = withContext(Dispatchers.IO) {
         val targetRelativePath = when {
-            targetDirectoryName.equals("Camera", ignoreCase = true) -> "${Environment.DIRECTORY_DCIM}/Camera"
-            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> "${Environment.DIRECTORY_PICTURES}/Screenshots"
-            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> Environment.DIRECTORY_DOWNLOADS
-            else -> "${Environment.DIRECTORY_PICTURES}/$targetDirectoryName"
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> "${Environment.DIRECTORY_DCIM}/Camera/"
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> "${Environment.DIRECTORY_PICTURES}/Screenshots/"
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> "${Environment.DIRECTORY_DOWNLOADS}/"
+            else -> "${Environment.DIRECTORY_PICTURES}/$targetDirectoryName/"
         }
 
+        val targetDir = when {
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots")
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> 
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            else -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetDirectoryName)
+        }
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        var anySuccess = false
         for (item in items) {
             try {
-                val isVideo = item.mediaType == MediaType.VIDEO
-                val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, item.displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                var copied = false
+                val sourceFile = File(item.path)
+                val targetFile = File(targetDir, item.displayName)
+
+                // 1. Direct file stream copy if accessible
+                if (sourceFile.exists()) {
+                    try {
+                        sourceFile.inputStream().use { input ->
+                            targetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (targetFile.exists() && targetFile.length() > 0) {
+                            copied = true
+                            android.media.MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(targetFile.absolutePath),
+                                arrayOf(item.mimeType),
+                                null
+                            )
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
-                val newUri = contentResolver.insert(collection, values)
-                if (newUri != null) {
-                    contentResolver.openInputStream(item.uri)?.use { input ->
-                        contentResolver.openOutputStream(newUri)?.use { output ->
-                            input.copyTo(output)
+
+                // 2. MediaStore insert fallback
+                if (!copied) {
+                    val isVideo = item.mediaType == MediaType.VIDEO
+                    val collection = if (isVideo) {
+                        MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    } else {
+                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    }
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, item.displayName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+                            put(MediaStore.MediaColumns.IS_PENDING, 1)
                         }
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        values.clear()
-                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        contentResolver.update(newUri, values, null, null)
+                    val newUri = contentResolver.insert(collection, values)
+                    if (newUri != null) {
+                        contentResolver.openInputStream(item.uri)?.use { input ->
+                            contentResolver.openOutputStream(newUri)?.use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            values.clear()
+                            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            contentResolver.update(newUri, values, null, null)
+                        }
+                        copied = true
                     }
                 }
+
+                if (copied) anySuccess = true
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
-        true
+        anySuccess
     }
 
     override suspend fun moveMedia(items: List<MediaItem>, targetDirectoryName: String): Boolean = withContext(Dispatchers.IO) {
-        copyMedia(items, targetDirectoryName)
+        val targetRelativePath = when {
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> "${Environment.DIRECTORY_DCIM}/Camera/"
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> "${Environment.DIRECTORY_PICTURES}/Screenshots/"
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> "${Environment.DIRECTORY_DOWNLOADS}/"
+            else -> "${Environment.DIRECTORY_PICTURES}/$targetDirectoryName/"
+        }
+
+        val targetDir = when {
+            targetDirectoryName.equals("Camera", ignoreCase = true) -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
+            targetDirectoryName.equals("Screenshots", ignoreCase = true) -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots")
+            targetDirectoryName.equals("Download", ignoreCase = true) || targetDirectoryName.equals("Downloads", ignoreCase = true) -> 
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            else -> 
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), targetDirectoryName)
+        }
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+
+        var anySuccess = false
         for (item in items) {
             try {
-                contentResolver.delete(item.uri, null, null)
-            } catch (e: Exception) {}
+                var moved = false
+                val sourceFile = File(item.path)
+                val targetFile = File(targetDir, item.displayName)
+
+                // 1. Direct filesystem atomic move
+                if (sourceFile.exists()) {
+                    try {
+                        if (sourceFile.renameTo(targetFile)) {
+                            moved = true
+                            android.media.MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(sourceFile.absolutePath, targetFile.absolutePath),
+                                null,
+                                null
+                            )
+                            try {
+                                contentResolver.delete(item.uri, null, null)
+                            } catch (ignored: Exception) {}
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // 2. Try MediaStore RELATIVE_PATH update if rename wasn't possible
+                if (!moved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val updateValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+                        }
+                        val rows = contentResolver.update(item.uri, updateValues, null, null)
+                        if (rows > 0) {
+                            moved = true
+                            // Scan paths to update bucket cache immediately
+                            android.media.MediaScannerConnection.scanFile(
+                                context,
+                                arrayOf(item.path),
+                                null,
+                                null
+                            )
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // 3. Fallback: Copy to destination, delete source, and re-scan
+                if (!moved) {
+                    val copied = copyMedia(listOf(item), targetDirectoryName)
+                    if (copied) {
+                        moved = true
+                        if (sourceFile.exists()) {
+                            try { sourceFile.delete() } catch (ignored: Exception) {}
+                        }
+                        try {
+                            contentResolver.delete(item.uri, null, null)
+                        } catch (ignored: Exception) {}
+                        android.media.MediaScannerConnection.scanFile(
+                            context,
+                            arrayOf(sourceFile.absolutePath),
+                            null,
+                            null
+                        )
+                    }
+                }
+
+                if (moved) anySuccess = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
-        true
+        anySuccess
     }
 }
 
