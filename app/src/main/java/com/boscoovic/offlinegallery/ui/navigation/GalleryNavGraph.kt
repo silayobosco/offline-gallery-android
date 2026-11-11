@@ -1,26 +1,20 @@
 package com.boscoovic.offlinegallery.ui.navigation
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
-import com.boscoovic.offlinegallery.ui.components.BottomNavigationBar
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumDetailScreen
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumDetailViewModel
-import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsScreen
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsViewModel
 import com.boscoovic.offlinegallery.ui.screens.editor.EditorScreen
 import com.boscoovic.offlinegallery.ui.screens.editor.EditorViewModel
-import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesScreen
+import com.boscoovic.offlinegallery.ui.screens.main.MainGalleryScreen
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesViewModel
 import com.boscoovic.offlinegallery.ui.screens.recyclebin.RecycleBinScreen
 import com.boscoovic.offlinegallery.ui.screens.recyclebin.RecycleBinViewModel
@@ -41,76 +35,41 @@ fun GalleryNavGraph(
     repository: MediaRepository,
     modifier: Modifier = Modifier
 ) {
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-
-    val bottomBarRoutes = listOf(
-        Screen.Pictures.route,
-        Screen.Albums.route
-    )
-    val showBottomBar = currentRoute in bottomBarRoutes
-
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                BottomNavigationBar(
-                    currentRoute = currentRoute,
-                    onNavigate = { screen ->
-                        navController.navigate(screen.route) {
-                            popUpTo(Screen.Pictures.route) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
-            }
-        },
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Pictures.route,
         modifier = modifier
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Pictures.route,
-            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
-        ) {
-            // Pictures Tab
-            composable(Screen.Pictures.route) {
-                val viewModel: PicturesViewModel = hiltViewModel()
-                PicturesScreen(
-                    viewModel = viewModel,
-                    onMediaClick = { item ->
-                        navController.navigate(Screen.Viewer.createRoute(item.id, "ALL", ""))
-                    },
-                    onSearchClick = {
-                        navController.navigate(Screen.Search.route)
-                    }
-                )
-            }
-
-            // Albums Tab
-            composable(Screen.Albums.route) {
-                val viewModel: AlbumsViewModel = hiltViewModel()
-                AlbumsScreen(
-                    viewModel = viewModel,
-                    onAlbumClick = { album ->
-                        navController.navigate(Screen.AlbumDetail.createRoute(album.id, album.name, album.isCustom))
-                    },
-                    onFavoritesClick = {
-                        navController.navigate(Screen.Viewer.createRoute(0L, "FAVORITES", ""))
-                    },
-                    onSecureFolderClick = {
-                        navController.navigate(Screen.SecureFolder.route)
-                    },
-                    onRecycleBinClick = {
-                        navController.navigate(Screen.RecycleBin.route)
-                    },
-                    onSearchClick = {
-                        navController.navigate(Screen.Search.route)
-                    }
-                )
-            }
+    ) {
+        // Main Screen with Top Tabs [Pictures(367)] [Albums(12)], Collapsible Reachability Area, and Zero Bottom Bar
+        composable(Screen.Pictures.route) {
+            val picturesViewModel: PicturesViewModel = hiltViewModel()
+            val albumsViewModel: AlbumsViewModel = hiltViewModel()
+            MainGalleryScreen(
+                picturesViewModel = picturesViewModel,
+                albumsViewModel = albumsViewModel,
+                onMediaClick = { item ->
+                    navController.navigate(Screen.Viewer.createRoute(item.id, "ALL", ""))
+                },
+                onAlbumClick = { album ->
+                    navController.navigate(Screen.AlbumDetail.createRoute(album.id, album.name, album.isCustom))
+                },
+                onFavoritesClick = {
+                    navController.navigate(Screen.Viewer.createRoute(0L, "FAVORITES", ""))
+                },
+                onSecureFolderClick = {
+                    navController.navigate(Screen.SecureFolder.route)
+                },
+                onRecycleBinClick = {
+                    navController.navigate(Screen.RecycleBin.route)
+                },
+                onSearchClick = {
+                    navController.navigate(Screen.Search.route)
+                },
+                onSettingsClick = {
+                    navController.navigate(Screen.Settings.route)
+                }
+            )
+        }
 
             // Album Detail
             composable(
@@ -230,5 +189,5 @@ fun GalleryNavGraph(
             }
         }
     }
-}
+
 
