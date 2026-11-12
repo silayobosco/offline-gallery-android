@@ -1,11 +1,16 @@
 package com.boscoovic.offlinegallery.ui.screens.main
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,9 +26,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -31,6 +38,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -41,6 +49,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +58,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +79,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -127,13 +138,21 @@ fun MainGalleryScreen(
     }
 
     // Samsung One UI Reachability Viewing Area Height:
-    // Generously expanded at rest (~200dp) so content is easily within thumb reach.
+    // Generously expanded at rest (~168dp) so content is easily within thumb reach.
     // Shrinks down to 0dp as the user scrolls, and expands back when scrolled to the top!
     val viewingAreaHeight by animateDpAsState(
-        targetValue = if (isScrolled) 0.dp else 200.dp,
+        targetValue = if (isScrolled) 0.dp else 168.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "viewingAreaHeight"
     )
+    val heroAlpha = ((viewingAreaHeight.value - 36f) / 132f).coerceIn(0f, 1f)
+
+    // Continuous page fraction (0f = Pictures, 1f = Albums) for real-time sliding tab indicator
+    val pageProgress by remember {
+        derivedStateOf {
+            (pagerState.currentPage + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
+        }
+    }
 
     var showMoreMenu by remember { mutableStateOf(false) }
 
@@ -143,7 +162,58 @@ fun MainGalleryScreen(
             .statusBarsPadding()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Top Header Row with Tabs: [ Pictures(367) ] [ Albums(12) ] and Actions
+        // Samsung One UI Reachability Viewing Area (Expands when at top, collapses smoothly on scroll)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(viewingAreaHeight)
+                .padding(horizontal = 24.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (viewingAreaHeight > 36.dp) {
+                AnimatedContent(
+                    targetState = pagerState.currentPage,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "heroHeaderCrossfade",
+                    modifier = Modifier.graphicsLayer {
+                        alpha = heroAlpha
+                        translationY = (1f - heroAlpha) * -20f
+                    }
+                ) { activePage ->
+                    Column {
+                        Text(
+                            text = if (activePage == 0) stringResource(R.string.pictures) else stringResource(R.string.albums),
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 36.sp,
+                                letterSpacing = (-0.5).sp
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (activePage == 0) {
+                                    stringResource(R.string.items_count, picturesState.totalCount)
+                                } else {
+                                    "${albumsState.albums.size} albums"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Top Navigation & Action Bar with Live Sliding Indicator
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -151,72 +221,109 @@ fun MainGalleryScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Tabs on the Same Row: Pictures(count) and Albums(count)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Pictures Tab
-                val isPicturesSelected = pagerState.currentPage == 0
+            // Segmented Tabs with Live Pager Offset Indicator
+            Column {
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                        }
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Pictures",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = if (isPicturesSelected) 22.sp else 18.sp
-                        ),
-                        fontWeight = if (isPicturesSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isPicturesSelected) MaterialTheme.colorScheme.onBackground
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    // Pictures Tab
+                    val isPicturesSelected = pagerState.currentPage == 0
+                    val picturesTextColor by animateColorAsState(
+                        targetValue = if (isPicturesSelected) MaterialTheme.colorScheme.onBackground
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        label = "picturesTabColor"
                     )
-                    Spacer(modifier = Modifier.size(4.dp))
-                    Text(
-                        text = "(${picturesState.totalCount})",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = if (isPicturesSelected) 16.sp else 14.sp
-                        ),
-                        fontWeight = if (isPicturesSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isPicturesSelected) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    Row(
+                        modifier = Modifier
+                            .width(116.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Pictures",
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
+                            fontWeight = if (isPicturesSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = picturesTextColor
+                        )
+                        // Compact count badge appears only when reachability header collapses
+                        AnimatedVisibility(
+                            visible = isScrolled,
+                            enter = fadeIn() + expandHorizontally(),
+                            exit = fadeOut() + shrinkHorizontally()
+                        ) {
+                            Text(
+                                text = " ${picturesState.totalCount}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isPicturesSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                    }
+
+                    // Albums Tab
+                    val isAlbumsSelected = pagerState.currentPage == 1
+                    val albumsTextColor by animateColorAsState(
+                        targetValue = if (isAlbumsSelected) MaterialTheme.colorScheme.onBackground
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        label = "albumsTabColor"
                     )
+                    Row(
+                        modifier = Modifier
+                            .width(116.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                coroutineScope.launch { pagerState.animateScrollToPage(1) }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Albums",
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
+                            fontWeight = if (isAlbumsSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = albumsTextColor
+                        )
+                        // Compact count badge appears only when reachability header collapses
+                        AnimatedVisibility(
+                            visible = isScrolled,
+                            enter = fadeIn() + expandHorizontally(),
+                            exit = fadeOut() + shrinkHorizontally()
+                        ) {
+                            Text(
+                                text = " ${albumsState.albums.size}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isAlbumsSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                    }
                 }
 
-                // Albums Tab
-                val isAlbumsSelected = pagerState.currentPage == 1
-                Row(
+                // Sliding Pill Indicator tracking HorizontalPager offset in real time
+                Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            coroutineScope.launch { pagerState.animateScrollToPage(1) }
-                        }
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .width(240.dp)
+                        .height(3.dp)
+                        .padding(horizontal = 24.dp)
                 ) {
-                    Text(
-                        text = "Albums",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = if (isAlbumsSelected) 22.sp else 18.sp
-                        ),
-                        fontWeight = if (isAlbumsSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isAlbumsSelected) MaterialTheme.colorScheme.onBackground
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.size(4.dp))
-                    Text(
-                        text = "(${albumsState.albums.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = if (isAlbumsSelected) 16.sp else 14.sp
-                        ),
-                        fontWeight = if (isAlbumsSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isAlbumsSelected) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    Box(
+                        modifier = Modifier
+                            .offset(x = (124.dp * pageProgress))
+                            .width(68.dp)
+                            .height(3.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
                     )
                 }
             }
@@ -231,7 +338,11 @@ fun MainGalleryScreen(
                     )
                 }
 
-                if (pagerState.currentPage == 1) {
+                AnimatedVisibility(
+                    visible = pagerState.currentPage == 1,
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
+                ) {
                     IconButton(onClick = { albumsViewModel.openCreateDialog() }) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -278,54 +389,14 @@ fun MainGalleryScreen(
                                 onSecureFolderClick()
                             }
                         )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             text = { Text("Settings") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             onClick = {
                                 showMoreMenu = false
                                 onSettingsClick()
                             }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Samsung One UI Reachability Viewing Area (Expands when at top, shrinks when scrolling down)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(viewingAreaHeight)
-                .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            if (viewingAreaHeight > 50.dp) {
-                Column {
-                    if (pagerState.currentPage == 0) {
-                        Text(
-                            text = stringResource(R.string.pictures),
-                            style = MaterialTheme.typography.displayLarge.copy(fontSize = 38.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.items_count, picturesState.totalCount),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            text = stringResource(R.string.albums),
-                            style = MaterialTheme.typography.displayLarge.copy(fontSize = 38.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${albumsState.albums.size} albums",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
