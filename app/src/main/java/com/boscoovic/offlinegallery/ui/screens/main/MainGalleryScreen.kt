@@ -83,9 +83,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -102,6 +105,7 @@ import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsViewModel
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesUiState
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesViewModel
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @Composable
@@ -222,9 +226,13 @@ fun MainGalleryScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Segmented Tabs with Live Pager Offset Indicator
+            var tab0WidthPx by remember { mutableIntStateOf(0) }
+            var tab1WidthPx by remember { mutableIntStateOf(0) }
+            var tab1OffsetXPx by remember { mutableIntStateOf(0) }
+
             Column {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Pictures Tab
@@ -236,34 +244,45 @@ fun MainGalleryScreen(
                     )
                     Row(
                         modifier = Modifier
-                            .width(116.dp)
+                            .onGloballyPositioned { coords ->
+                                tab0WidthPx = coords.size.width
+                            }
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 coroutineScope.launch { pagerState.animateScrollToPage(0) }
                             }
                             .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Pictures",
-                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 18.sp,
+                                lineHeight = 22.sp
+                            ),
                             fontWeight = if (isPicturesSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = picturesTextColor
+                            color = picturesTextColor,
+                            maxLines = 1,
+                            softWrap = false
                         )
-                        // Compact count badge appears only when reachability header collapses
+                        // Compact count appears only when reachability header collapses, using identical font metrics
                         AnimatedVisibility(
                             visible = isScrolled,
-                            enter = fadeIn() + expandHorizontally(),
-                            exit = fadeOut() + shrinkHorizontally()
+                            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+                            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
                         ) {
                             Text(
-                                text = " ${picturesState.totalCount}",
-                                style = MaterialTheme.typography.labelMedium,
+                                text = "${picturesState.totalCount}",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp
+                                ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isPicturesSelected) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                modifier = Modifier.padding(start = 4.dp)
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(start = 5.dp)
                             )
                         }
                     }
@@ -277,50 +296,67 @@ fun MainGalleryScreen(
                     )
                     Row(
                         modifier = Modifier
-                            .width(116.dp)
+                            .onGloballyPositioned { coords ->
+                                tab1WidthPx = coords.size.width
+                                tab1OffsetXPx = coords.positionInParent().x.roundToInt()
+                            }
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
                             }
                             .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Albums",
-                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 18.sp,
+                                lineHeight = 22.sp
+                            ),
                             fontWeight = if (isAlbumsSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = albumsTextColor
+                            color = albumsTextColor,
+                            maxLines = 1,
+                            softWrap = false
                         )
-                        // Compact count badge appears only when reachability header collapses
+                        // Compact count appears only when reachability header collapses, using identical font metrics
                         AnimatedVisibility(
                             visible = isScrolled,
-                            enter = fadeIn() + expandHorizontally(),
-                            exit = fadeOut() + shrinkHorizontally()
+                            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+                            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
                         ) {
                             Text(
-                                text = " ${albumsState.albums.size}",
-                                style = MaterialTheme.typography.labelMedium,
+                                text = "${albumsState.albums.size}",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp
+                                ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isAlbumsSelected) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                modifier = Modifier.padding(start = 4.dp)
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(start = 5.dp)
                             )
                         }
                     }
                 }
 
-                // Sliding Pill Indicator tracking HorizontalPager offset in real time
+                // Sliding Pill Indicator tracking HorizontalPager offset & measured tab centers in real time
+                val indicatorWidthDp = 52.dp
                 Box(
-                    modifier = Modifier
-                        .width(240.dp)
-                        .height(3.dp)
-                        .padding(horizontal = 24.dp)
+                    modifier = Modifier.height(3.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .offset(x = (124.dp * pageProgress))
-                            .width(68.dp)
+                            .offset {
+                                val indicatorWidthPx = indicatorWidthDp.roundToPx()
+                                val center0 = tab0WidthPx / 2f
+                                val center1 = tab1OffsetXPx + tab1WidthPx / 2f
+                                val currentCenter = center0 + (center1 - center0) * pageProgress
+                                val xPx = (currentCenter - indicatorWidthPx / 2f).roundToInt().coerceAtLeast(0)
+                                IntOffset(xPx, 0)
+                            }
+                            .width(indicatorWidthDp)
                             .height(3.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primary)
