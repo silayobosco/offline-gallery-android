@@ -246,6 +246,7 @@ fun MediaViewerScreen(
                     videoEndAction = videoEndAction,
                     playbackSpeed = playbackSpeed,
                     isMuted = isMuted,
+                    onMiddleHold = { viewModel.toggleMoreSheet(true) },
                     onVideoEnded = {
                         val nextIdx = pagerState.currentPage + 1
                         if (nextIdx < uiState.items.size) {
@@ -272,7 +273,8 @@ fun MediaViewerScreen(
                 ZoomableImage(
                     item = item,
                     onTap = { viewModel.toggleChrome() },
-                    onDoubleTapLike = handleDoubleTapLike
+                    onDoubleTapLike = handleDoubleTapLike,
+                    onLongPress = { viewModel.toggleMoreSheet(true) }
                 )
             }
         }

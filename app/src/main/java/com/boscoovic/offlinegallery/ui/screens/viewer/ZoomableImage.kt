@@ -29,6 +29,7 @@ fun ZoomableImage(
     item: MediaItem,
     onTap: () -> Unit,
     onDoubleTapLike: () -> Unit,
+    onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -41,7 +42,8 @@ fun ZoomableImage(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
-                    onDoubleTap = { onDoubleTapLike() }
+                    onDoubleTap = { onDoubleTapLike() },
+                    onLongPress = { onLongPress() }
                 )
             }
             .then(

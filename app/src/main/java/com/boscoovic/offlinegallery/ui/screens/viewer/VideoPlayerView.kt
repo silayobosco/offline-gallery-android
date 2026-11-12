@@ -93,6 +93,7 @@ fun VideoPlayerView(
     videoEndAction: VideoEndAction = VideoEndAction.REPEAT_ONE,
     playbackSpeed: Float = 1.0f,
     isMuted: Boolean = false,
+    onMiddleHold: () -> Unit = {},
     onVideoEnded: () -> Unit = {},
     onPlayerStateUpdated: (isPlaying: Boolean, currentPositionMs: Long, durationMs: Long) -> Unit,
     onTap: () -> Unit,
@@ -323,6 +324,7 @@ fun VideoPlayerView(
                 }
                 slideDownProgress = 0f
             },
+            onMiddleHold = onMiddleHold,
             onTap = {
                 if (isSpeedLocked) {
                     isSpeedLocked = false
@@ -426,6 +428,7 @@ private fun VideoGestureSurface(
     onSlideProgress: (Float) -> Unit,
     onLockTriggered: () -> Unit,
     onSpeedEnd: () -> Unit,
+    onMiddleHold: () -> Unit,
     onTap: () -> Unit,
     onDoubleTap: () -> Unit,
     modifier: Modifier = Modifier
@@ -441,16 +444,28 @@ private fun VideoGestureSurface(
                     val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                     val startPos = down.position
                     val pointerId = down.id
+                    val width = size.width.toFloat()
+                    val isEdge = startPos.x < width * 0.25f || startPos.x > width * 0.75f
+
                     var isSpeeding = false
+                    var isMiddleHoldFired = false
                     var isLocked = false
                     var isCancelled = false
 
-                    // Timer to trigger 2x speed after 200ms of holding still
-                    val speedJob = scope.launch {
-                        delay(200L)
-                        isSpeeding = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onSpeedStart()
+                    // Timer to trigger action after 450ms of holding still
+                    // - On edges: activates 2x speed
+                    // - In middle: opens the More sheet
+                    val holdJob = scope.launch {
+                        delay(450L)
+                        if (isEdge) {
+                            isSpeeding = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSpeedStart()
+                        } else {
+                            isMiddleHoldFired = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onMiddleHold()
+                        }
                     }
 
                     try {
@@ -460,8 +475,8 @@ private fun VideoGestureSurface(
 
                             if (!pointer.pressed) {
                                 // Pointer released
-                                speedJob.cancel()
-                                if (isSpeeding) {
+                                holdJob.cancel()
+                                if (isSpeeding || isMiddleHoldFired) {
                                     pointer.consume()
                                 } else if (!isCancelled) {
                                     val dx = pointer.position.x - startPos.x
@@ -485,16 +500,16 @@ private fun VideoGestureSurface(
                             val dx = pointer.position.x - startPos.x
                             val dy = pointer.position.y - startPos.y
 
-                            if (!isSpeeding) {
+                            if (!isSpeeding && !isMiddleHoldFired) {
                                 val dist = kotlin.math.sqrt(dx * dx + dy * dy)
                                 if (dist > 35f) {
                                     // Finger moved before holding threshold: intentional swipe!
                                     isCancelled = true
-                                    speedJob.cancel()
+                                    holdJob.cancel()
                                     break // Pass unconsumed to VerticalPager (scroll up/down) or swipe (left/right)
                                 }
-                            } else {
-                                // Speed is active (user held for 200ms)!
+                            } else if (isSpeeding) {
+                                // Speed is active on edge (user held on edge for 450ms)!
                                 // Consume all pointer events so VerticalPager cannot scroll
                                 pointer.consume()
 
@@ -507,10 +522,13 @@ private fun VideoGestureSurface(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onLockTriggered()
                                 }
+                            } else if (isMiddleHoldFired) {
+                                // Middle hold fired (More sheet opened), consume pointer events
+                                pointer.consume()
                             }
                         }
                     } finally {
-                        speedJob.cancel()
+                        holdJob.cancel()
                         if (isSpeeding) {
                             onSpeedEnd()
                         }
