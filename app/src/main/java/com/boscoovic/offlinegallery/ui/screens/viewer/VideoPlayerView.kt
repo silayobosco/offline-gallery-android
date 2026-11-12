@@ -430,20 +430,16 @@ private fun VideoGestureSurface(
                             val dy = pointer.position.y - startPos.y
 
                             if (!isSpeeding) {
-                                if (dy < -35f || kotlin.math.abs(dx) > 35f) {
-                                    // User swiped UP (next video) or swiped LEFT/RIGHT (details/delete)
+                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                if (dist > 35f) {
+                                    // Finger moved before holding threshold: intentional swipe!
                                     isCancelled = true
                                     speedJob.cancel()
-                                    break // Let VerticalPager or horizontal drag handle it!
-                                } else if (dy > 30f) {
-                                    // User slid DOWN! Activate speed immediately and begin locking!
-                                    isSpeeding = true
-                                    speedJob.cancel()
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSpeedStart()
+                                    break // Pass unconsumed to VerticalPager (scroll up/down) or swipe (left/right)
                                 }
                             } else {
-                                // Speed is active: consume all pointer events so VerticalPager cannot scroll
+                                // Speed is active (user held for 200ms)!
+                                // Consume all pointer events so VerticalPager cannot scroll
                                 pointer.consume()
 
                                 val lockThresholdPx = 100f
