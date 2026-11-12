@@ -23,6 +23,7 @@ import com.boscoovic.offlinegallery.ui.screens.search.SearchViewModel
 import com.boscoovic.offlinegallery.ui.screens.secure.SecureFolderScreen
 import com.boscoovic.offlinegallery.ui.screens.secure.SecureFolderViewModel
 import com.boscoovic.offlinegallery.ui.screens.settings.SettingsScreen
+import com.boscoovic.offlinegallery.ui.screens.settings.SettingsViewModel
 import com.boscoovic.offlinegallery.ui.screens.slideshow.SlideshowScreen
 import com.boscoovic.offlinegallery.ui.screens.stories.StoriesScreen
 import com.boscoovic.offlinegallery.ui.screens.stories.StoriesViewModel
@@ -186,7 +187,9 @@ fun GalleryNavGraph(
 
             // Settings
             composable(Screen.Settings.route) {
+                val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(
+                    viewModel = viewModel,
                     onBack = { navController.popBackStack() }
                 )
             }

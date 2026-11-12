@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
+import com.boscoovic.offlinegallery.data.settings.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,11 +39,12 @@ data class PicturesUiState(
 @HiltViewModel
 class PicturesViewModel @Inject constructor(
     private val repository: MediaRepository,
+    private val settingsManager: SettingsManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _filter = MutableStateFlow(MediaFilter.ALL)
-    private val _columnCount = MutableStateFlow(3)
+    private val _columnCount = MutableStateFlow(settingsManager.defaultGridColumns.value)
     private val _selectedItemIds = MutableStateFlow<Set<Long>>(emptySet())
 
     val uiState: StateFlow<PicturesUiState> = _filter.flatMapLatest { filter ->
@@ -73,7 +75,9 @@ class PicturesViewModel @Inject constructor(
     }
 
     fun setColumnCount(columns: Int) {
-        _columnCount.value = columns.coerceIn(2, 6)
+        val clamped = columns.coerceIn(2, 6)
+        _columnCount.value = clamped
+        settingsManager.setDefaultGridColumns(clamped)
     }
 
     fun toggleItemSelection(mediaId: Long) {
