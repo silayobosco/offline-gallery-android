@@ -21,6 +21,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class ShuffleMode {
+    OFF,
+    FOLDER,
+    UNIVERSAL
+}
+
 data class MediaViewerUiState(
     val items: List<MediaItem> = emptyList(),
     val currentIndex: Int = 0,
@@ -28,6 +34,7 @@ data class MediaViewerUiState(
     val showDetailsSheet: Boolean = false,
     val showMoreSheet: Boolean = false,
     val isShuffleEnabled: Boolean = false,
+    val shuffleMode: ShuffleMode = ShuffleMode.OFF,
     val currentExif: ExifData? = null,
     val allAlbums: List<Album> = emptyList()
 )
@@ -44,12 +51,13 @@ class MediaViewerViewModel @Inject constructor(
     private val contextArg: String = savedStateHandle.get<String>("contextArg") ?: ""
 
     private val _originalItems = MutableStateFlow<List<MediaItem>>(emptyList())
+    private val _allMediaItems = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _items = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _currentIndex = MutableStateFlow(0)
     private val _isChromeVisible = MutableStateFlow(true)
     private val _showDetailsSheet = MutableStateFlow(false)
     private val _showMoreSheet = MutableStateFlow(false)
-    private val _isShuffleEnabled = MutableStateFlow(false)
+    private val _shuffleMode = MutableStateFlow(ShuffleMode.OFF)
     private val _currentExif = MutableStateFlow<ExifData?>(null)
     private val _allAlbums = MutableStateFlow<List<Album>>(emptyList())
 
@@ -59,10 +67,11 @@ class MediaViewerViewModel @Inject constructor(
         _isChromeVisible,
         _showDetailsSheet,
         _showMoreSheet,
-        _isShuffleEnabled,
+        _shuffleMode,
         _currentExif,
         _allAlbums
     ) { args: Array<Any?> ->
+        val currentShuffleMode = args[5] as ShuffleMode
         @Suppress("UNCHECKED_CAST")
         MediaViewerUiState(
             items = args[0] as List<MediaItem>,
@@ -70,7 +79,8 @@ class MediaViewerViewModel @Inject constructor(
             isChromeVisible = args[2] as Boolean,
             showDetailsSheet = args[3] as Boolean,
             showMoreSheet = args[4] as Boolean,
-            isShuffleEnabled = args[5] as Boolean,
+            isShuffleEnabled = currentShuffleMode != ShuffleMode.OFF,
+            shuffleMode = currentShuffleMode,
             currentExif = args[6] as ExifData?,
             allAlbums = args[7] as List<Album>
         )
@@ -83,6 +93,15 @@ class MediaViewerViewModel @Inject constructor(
     init {
         loadItems()
         loadAlbums()
+        loadAllMedia()
+    }
+
+    private fun loadAllMedia() {
+        viewModelScope.launch {
+            repository.getAllMedia(MediaFilter.ALL).collect {
+                _allMediaItems.value = it
+            }
+        }
     }
 
     private fun loadAlbums() {
@@ -110,46 +129,90 @@ class MediaViewerViewModel @Inject constructor(
 
             flow.collect { list ->
                 _originalItems.value = list
-                if (_isShuffleEnabled.value) {
-                    val curr = currentItem
-                    val remaining = list.filter { it.id != curr?.id }.shuffled()
-                    val shuffledList = if (curr != null) listOf(curr) + remaining else remaining
-                    _items.value = shuffledList
-                    _currentIndex.value = 0
-                } else {
-                    _items.value = list
-                    val targetIndex = list.indexOfFirst { it.id == initialMediaId }
-                    if (targetIndex >= 0) {
-                        _currentIndex.value = targetIndex
-                        loadExif(list[targetIndex])
-                    } else if (list.isNotEmpty()) {
-                        _currentIndex.value = 0
-                        loadExif(list[0])
+                val curr = currentItem
+                when (_shuffleMode.value) {
+                    ShuffleMode.OFF -> {
+                        _items.value = list
+                        val targetIndex = list.indexOfFirst { it.id == (curr?.id ?: initialMediaId) }
+                        if (targetIndex >= 0) {
+                            _currentIndex.value = targetIndex
+                            loadExif(list[targetIndex])
+                        } else if (list.isNotEmpty()) {
+                            _currentIndex.value = 0
+                            loadExif(list[0])
+                        }
+                    }
+                    ShuffleMode.FOLDER -> {
+                        applyShuffle(ShuffleMode.FOLDER)
+                    }
+                    ShuffleMode.UNIVERSAL -> {
+                        applyShuffle(ShuffleMode.UNIVERSAL)
                     }
                 }
             }
         }
     }
 
-    fun toggleShuffle() {
-        val newShuffle = !_isShuffleEnabled.value
-        _isShuffleEnabled.value = newShuffle
-        val original = _originalItems.value
+    fun setShuffleMode(mode: ShuffleMode) {
+        _shuffleMode.value = mode
+        applyShuffle(mode)
+    }
+
+    private fun applyShuffle(mode: ShuffleMode) {
         val current = currentItem
-        if (newShuffle) {
-            if (original.isNotEmpty()) {
-                val remaining = original.filter { it.id != current?.id }.shuffled()
-                val newList = if (current != null) listOf(current) + remaining else remaining
-                _items.value = newList
-                _currentIndex.value = 0
+        val original = _originalItems.value
+        val allMedia = _allMediaItems.value
+
+        when (mode) {
+            ShuffleMode.OFF -> {
+                _items.value = original
+                val targetIdx = if (current != null) original.indexOfFirst { it.id == current.id } else -1
+                if (targetIdx >= 0) {
+                    _currentIndex.value = targetIdx
+                }
             }
-        } else {
-            _items.value = original
-            val targetIdx = if (current != null) original.indexOfFirst { it.id == current.id } else -1
-            if (targetIdx >= 0) {
-                _currentIndex.value = targetIdx
+            ShuffleMode.FOLDER -> {
+                val bucketId = current?.bucketId
+                val sourceList = if (contextType == "ALBUM" || contextType == "CUSTOM_ALBUM") {
+                    original
+                } else if (bucketId != null && bucketId != 0L) {
+                    allMedia.filter { it.bucketId == bucketId }.ifEmpty { original }
+                } else if (current?.bucketName != null) {
+                    allMedia.filter { it.bucketName == current.bucketName }.ifEmpty { original }
+                } else {
+                    original
+                }
+                if (sourceList.isNotEmpty()) {
+                    val remaining = sourceList.filter { it.id != current?.id }.shuffled()
+                    val newList = if (current != null) listOf(current) + remaining else remaining
+                    _items.value = newList
+                    _currentIndex.value = 0
+                }
+            }
+            ShuffleMode.UNIVERSAL -> {
+                val sourceList = if (allMedia.isNotEmpty()) allMedia else original
+                if (sourceList.isNotEmpty()) {
+                    val remaining = sourceList.filter { it.id != current?.id }.shuffled()
+                    val newList = if (current != null) listOf(current) + remaining else remaining
+                    _items.value = newList
+                    _currentIndex.value = 0
+                }
             }
         }
+    }
+
+    fun cycleShuffleMode(): ShuffleMode {
+        val nextMode = when (_shuffleMode.value) {
+            ShuffleMode.OFF -> ShuffleMode.FOLDER
+            ShuffleMode.FOLDER -> ShuffleMode.UNIVERSAL
+            ShuffleMode.UNIVERSAL -> ShuffleMode.OFF
+        }
+        setShuffleMode(nextMode)
+        return nextMode
+    }
+
+    fun toggleShuffle() {
+        cycleShuffleMode()
     }
 
     fun onPageChanged(index: Int) {

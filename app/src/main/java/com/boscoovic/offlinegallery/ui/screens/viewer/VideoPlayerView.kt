@@ -77,6 +77,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+enum class VideoEndAction {
+    REPEAT_ONE, // Repeat the same video (loop)
+    NEXT,       // Auto advance to next media item
+    STOP        // Stop at the end
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerView(
@@ -84,6 +90,8 @@ fun VideoPlayerView(
     isActive: Boolean,
     playPauseToggleTrigger: Long,
     seekPositionRequest: Long?,
+    videoEndAction: VideoEndAction = VideoEndAction.REPEAT_ONE,
+    onVideoEnded: () -> Unit = {},
     onPlayerStateUpdated: (isPlaying: Boolean, currentPositionMs: Long, durationMs: Long) -> Unit,
     onTap: () -> Unit,
     onDoubleTapLike: () -> Unit,
@@ -106,7 +114,16 @@ fun VideoPlayerView(
             setMediaItem(Media3Item.fromUri(item.uri))
             prepare()
             playWhenReady = false
-            repeatMode = Player.REPEAT_MODE_ONE
+            repeatMode = if (videoEndAction == VideoEndAction.REPEAT_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        }
+    }
+
+    // Dynamic repeat mode according to videoEndAction
+    LaunchedEffect(videoEndAction) {
+        exoPlayer.repeatMode = if (videoEndAction == VideoEndAction.REPEAT_ONE) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
         }
     }
 
@@ -132,7 +149,10 @@ fun VideoPlayerView(
     // Handle Play / Pause toggle triggered strictly from the right action button
     LaunchedEffect(playPauseToggleTrigger) {
         if (playPauseToggleTrigger > 0L && isActive) {
-            if (exoPlayer.isPlaying) {
+            if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                exoPlayer.seekTo(0L)
+                exoPlayer.play()
+            } else if (exoPlayer.isPlaying) {
                 exoPlayer.pause()
             } else {
                 exoPlayer.play()
@@ -186,6 +206,23 @@ fun VideoPlayerView(
                         exoPlayer.currentPosition.coerceAtLeast(0L),
                         duration
                     )
+                } else if (playbackState == Player.STATE_ENDED) {
+                    when (videoEndAction) {
+                        VideoEndAction.NEXT -> {
+                            onVideoEnded()
+                        }
+                        VideoEndAction.STOP -> {
+                            exoPlayer.pause()
+                            onPlayerStateUpdated(
+                                false,
+                                exoPlayer.duration.coerceAtLeast(0L),
+                                exoPlayer.duration.coerceAtLeast(0L)
+                            )
+                        }
+                        VideoEndAction.REPEAT_ONE -> {
+                            // Handled by Player.REPEAT_MODE_ONE automatically
+                        }
+                    }
                 }
             }
         }

@@ -8,6 +8,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -32,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
@@ -44,11 +47,17 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -65,6 +74,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -87,6 +98,7 @@ import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun MediaViewerScreen(
@@ -150,6 +162,24 @@ fun MediaViewerScreen(
 
     val currentItem = uiState.items.getOrNull(pagerState.currentPage)
 
+    val coroutineScope = rememberCoroutineScope()
+    var videoEndAction by rememberSaveable { mutableStateOf(VideoEndAction.REPEAT_ONE) }
+    var feedbackNotice by remember { mutableStateOf<String?>(null) }
+    var showShuffleMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(feedbackNotice) {
+        if (feedbackNotice != null) {
+            delay(2200L)
+            feedbackNotice = null
+        }
+    }
+
+    LaunchedEffect(uiState.currentIndex) {
+        if (pagerState.currentPage != uiState.currentIndex && uiState.currentIndex in uiState.items.indices) {
+            pagerState.scrollToPage(uiState.currentIndex)
+        }
+    }
+
     // Video playback & TikTok scrub state
     var isVideoPlaying by remember(currentItem?.id) { mutableStateOf(false) }
     var videoCurrentPosition by remember(currentItem?.id) { mutableLongStateOf(0L) }
@@ -204,6 +234,19 @@ fun MediaViewerScreen(
                     isActive = isActive,
                     playPauseToggleTrigger = if (isActive) playPauseToggleTrigger else 0L,
                     seekPositionRequest = if (isActive) seekPositionRequest else null,
+                    videoEndAction = videoEndAction,
+                    onVideoEnded = {
+                        val nextIdx = pagerState.currentPage + 1
+                        if (nextIdx < uiState.items.size) {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(nextIdx)
+                            }
+                        } else {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(0)
+                            }
+                        }
+                    },
                     onPlayerStateUpdated = { playing, pos, dur ->
                         if (isActive) {
                             isVideoPlaying = playing
@@ -310,28 +353,81 @@ fun MediaViewerScreen(
                     }
                 }
 
-                // Right: Shuffle toggle + Slideshow button
+                // Right: Shuffle toggle (Folder / Universal / Off) + Slideshow button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    IconButton(
-                        onClick = { viewModel.toggleShuffle() },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (uiState.isShuffleEnabled)
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                                else
-                                    Color.Black.copy(alpha = 0.45f)
+                    Box {
+                        IconButton(
+                            onClick = {
+                                val nextMode = viewModel.cycleShuffleMode()
+                                feedbackNotice = when (nextMode) {
+                                    ShuffleMode.OFF -> "Shuffle: Off (Normal order)"
+                                    ShuffleMode.FOLDER -> "Shuffle: Within folder (${currentItem?.bucketName ?: "Folder"})"
+                                    ShuffleMode.UNIVERSAL -> "Shuffle: Universal (All media)"
+                                }
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (uiState.shuffleMode) {
+                                        ShuffleMode.OFF -> Color.Black.copy(alpha = 0.45f)
+                                        ShuffleMode.FOLDER -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f)
+                                        ShuffleMode.UNIVERSAL -> MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                                    }
+                                )
+                        ) {
+                            Icon(
+                                imageVector = when (uiState.shuffleMode) {
+                                    ShuffleMode.OFF -> Icons.Default.Shuffle
+                                    ShuffleMode.FOLDER -> Icons.Default.FolderSpecial
+                                    ShuffleMode.UNIVERSAL -> Icons.Default.Shuffle
+                                },
+                                contentDescription = "Shuffle",
+                                tint = Color.White
                             )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle",
-                            tint = if (uiState.isShuffleEnabled) Color.White else Color.White.copy(alpha = 0.85f)
-                        )
+                        }
+
+                        DropdownMenu(
+                            expanded = showShuffleMenu,
+                            onDismissRequest = { showShuffleMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Normal Order (Shuffle Off)") },
+                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.OFF) {
+                                    { Icon(Icons.Default.Check, contentDescription = null) }
+                                } else null,
+                                onClick = {
+                                    showShuffleMenu = false
+                                    viewModel.setShuffleMode(ShuffleMode.OFF)
+                                    feedbackNotice = "Shuffle: Off (Normal order)"
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Within Folder (${currentItem?.bucketName ?: "Folder"})") },
+                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.FOLDER) {
+                                    { Icon(Icons.Default.Check, contentDescription = null) }
+                                } else null,
+                                onClick = {
+                                    showShuffleMenu = false
+                                    viewModel.setShuffleMode(ShuffleMode.FOLDER)
+                                    feedbackNotice = "Shuffle: Within folder (${currentItem?.bucketName ?: "Folder"})"
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Universal (All Media)") },
+                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.UNIVERSAL) {
+                                    { Icon(Icons.Default.Check, contentDescription = null) }
+                                } else null,
+                                onClick = {
+                                    showShuffleMenu = false
+                                    viewModel.setShuffleMode(ShuffleMode.UNIVERSAL)
+                                    feedbackNotice = "Shuffle: Universal (All media)"
+                                }
+                            )
+                        }
                     }
 
                     IconButton(
@@ -376,6 +472,31 @@ fun MediaViewerScreen(
             }
         }
 
+        // Floating feedback banner for Shuffle / Repeat status changes
+        AnimatedVisibility(
+            visible = feedbackNotice != null,
+            enter = fadeIn(tween(200)) + slideInVertically(initialOffsetY = { -30 }),
+            exit = fadeOut(tween(200)) + slideOutVertically(targetOffsetY = { -30 }),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 96.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = feedbackNotice.orEmpty(),
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
         // TikTok-style Vertical Action Column (Lower Right, sits above bottom description area)
         AnimatedVisibility(
             visible = uiState.isChromeVisible && currentItem != null,
@@ -390,7 +511,7 @@ fun MediaViewerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Play / Pause (Only for videos, placed strictly above Like button)
+                // Play / Pause & Repeat Loop (Only for videos)
                 if (currentItem?.mediaType == MediaType.VIDEO) {
                     TikTokActionButton(
                         icon = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -398,6 +519,37 @@ fun MediaViewerScreen(
                         iconTint = Color.White,
                         onClick = {
                             playPauseToggleTrigger = System.currentTimeMillis()
+                        }
+                    )
+
+                    // Repeat Loop button (when video ends: repeat same, next, stop)
+                    TikTokActionButton(
+                        icon = when (videoEndAction) {
+                            VideoEndAction.REPEAT_ONE -> Icons.Default.RepeatOne
+                            VideoEndAction.NEXT -> Icons.Default.SkipNext
+                            VideoEndAction.STOP -> Icons.Default.StopCircle
+                        },
+                        label = when (videoEndAction) {
+                            VideoEndAction.REPEAT_ONE -> "Loop"
+                            VideoEndAction.NEXT -> "Next"
+                            VideoEndAction.STOP -> "Stop"
+                        },
+                        iconTint = when (videoEndAction) {
+                            VideoEndAction.REPEAT_ONE, VideoEndAction.NEXT -> MaterialTheme.colorScheme.primary
+                            VideoEndAction.STOP -> Color.White.copy(alpha = 0.75f)
+                        },
+                        onClick = {
+                            val nextAction = when (videoEndAction) {
+                                VideoEndAction.REPEAT_ONE -> VideoEndAction.NEXT
+                                VideoEndAction.NEXT -> VideoEndAction.STOP
+                                VideoEndAction.STOP -> VideoEndAction.REPEAT_ONE
+                            }
+                            videoEndAction = nextAction
+                            feedbackNotice = when (nextAction) {
+                                VideoEndAction.REPEAT_ONE -> "When video ends: Repeat same video 🔂"
+                                VideoEndAction.NEXT -> "When video ends: Auto play next ⏭️"
+                                VideoEndAction.STOP -> "When video ends: Stop at end ⏹️"
+                            }
                         }
                     )
                 }
