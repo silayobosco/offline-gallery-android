@@ -147,5 +147,38 @@ class AlbumDetailViewModel @Inject constructor(
         }
     }
 
+    fun getNextAlbum(): Album? {
+        val albums = uiState.value.allAlbums
+        if (albums.size <= 1) return null
+        val currentIdx = albums.indexOfFirst { it.id == uiState.value.albumId && it.isCustom == uiState.value.isCustom }
+        return if (currentIdx >= 0) {
+            albums[(currentIdx + 1) % albums.size]
+        } else {
+            albums.firstOrNull()
+        }
+    }
+
+    fun switchToNextAlbum(): Album? {
+        val next = getNextAlbum() ?: return null
+        selectAlbum(next)
+        return next
+    }
+
+    fun renameCustomAlbum(newName: String) {
+        if (!uiState.value.isCustom || newName.isBlank()) return
+        viewModelScope.launch {
+            repository.renameCustomAlbum(uiState.value.albumId, newName.trim())
+            _currentAlbumName.value = newName.trim()
+        }
+    }
+
+    fun deleteCurrentAlbum(onComplete: () -> Unit) {
+        if (!uiState.value.isCustom) return
+        viewModelScope.launch {
+            repository.deleteCustomAlbum(uiState.value.albumId)
+            onComplete()
+        }
+    }
+
     private data class Tuple4<A, B, C, D>(val v1: A, val v2: B, val v3: C, val v4: D)
 }

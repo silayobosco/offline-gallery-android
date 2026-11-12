@@ -91,6 +91,9 @@ fun GalleryNavGraph(
                     },
                     onSearchClick = {
                         navController.navigate(Screen.Search.route)
+                    },
+                    onSlideshowClick = { contextType, contextArg ->
+                        navController.navigate(Screen.Slideshow.createRoute(contextType, contextArg))
                     }
                 )
             }
