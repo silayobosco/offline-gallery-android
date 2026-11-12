@@ -21,6 +21,9 @@
     <!-- Biometrics for Secure/Hidden folder -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
+    <!-- Set Wallpaper directly from gallery -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
     <!-- File management to move, rename, and organize gallery media -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"

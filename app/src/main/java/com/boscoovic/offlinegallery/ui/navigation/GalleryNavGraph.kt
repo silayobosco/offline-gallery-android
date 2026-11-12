@@ -169,7 +169,10 @@ fun GalleryNavGraph(
                 val viewModel: SecureFolderViewModel = hiltViewModel()
                 SecureFolderScreen(
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onMediaClick = { item ->
+                        navController.navigate(Screen.Viewer.createRoute(item.id, "SECURE", ""))
+                    }
                 )
             }
 

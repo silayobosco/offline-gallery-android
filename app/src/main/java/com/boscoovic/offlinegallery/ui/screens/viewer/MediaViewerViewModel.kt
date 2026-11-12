@@ -1,7 +1,10 @@
 package com.boscoovic.offlinegallery.ui.screens.viewer
 
+import android.app.WallpaperManager
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,6 +15,7 @@ import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +23,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
+
+enum class WallpaperTarget {
+    HOME,
+    LOCK,
+    BOTH
+}
 
 enum class ShuffleMode {
     OFF,
@@ -130,6 +142,7 @@ class MediaViewerViewModel @Inject constructor(
                     repository.getAlbumMedia(albumId, isCustom = true)
                 }
                 "FAVORITES" -> repository.getAllMedia(MediaFilter.FAVORITES)
+                "SECURE" -> repository.getSecureItems()
                 else -> repository.getAllMedia(MediaFilter.ALL)
             }
 
@@ -330,7 +343,9 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
-    fun hideCurrent(onHidden: (isLastItem: Boolean) -> Unit = {}) {
+    val isSecureContext: Boolean get() = contextType == "SECURE"
+
+    fun moveToSecureFolder(onMoved: (isLastItem: Boolean) -> Unit = {}) {
         val current = currentItem ?: return
         val currentId = current.id
         val oldIndex = _currentIndex.value
@@ -352,8 +367,43 @@ class MediaViewerViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            repository.setHidden(current.id, true)
-            onHidden(wasLastItem)
+            val success = repository.moveToSecureFolder(listOf(current))
+            if (success) {
+                onMoved(wasLastItem)
+            }
+        }
+    }
+
+    fun hideCurrent(onHidden: (isLastItem: Boolean) -> Unit = {}) {
+        moveToSecureFolder(onHidden)
+    }
+
+    fun restoreFromSecureFolder(onRestored: (isLastItem: Boolean) -> Unit = {}) {
+        val current = currentItem ?: return
+        val currentId = current.id
+        val oldIndex = _currentIndex.value
+        val currentList = _items.value
+        val remainingList = currentList.filter { it.id != currentId }
+        val wasLastItem = remainingList.isEmpty()
+
+        if (remainingList.isNotEmpty()) {
+            val targetIndex = when (lastScrollDirection) {
+                ScrollDirection.FORWARD -> oldIndex.coerceIn(0, remainingList.size - 1)
+                ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, remainingList.size - 1)
+            }
+            _items.value = remainingList
+            _currentIndex.value = targetIndex
+            loadExif(remainingList[targetIndex])
+        } else {
+            _items.value = emptyList()
+            _currentIndex.value = 0
+        }
+
+        viewModelScope.launch {
+            val success = repository.restoreFromSecureFolder(current.id)
+            if (success) {
+                onRestored(wasLastItem)
+            }
         }
     }
 
@@ -386,16 +436,56 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    fun setAsWallpaper(target: WallpaperTarget, onDone: (Boolean) -> Unit) {
+        val current = currentItem ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val wallpaperManager = WallpaperManager.getInstance(context)
+                val flags = when (target) {
+                    WallpaperTarget.HOME -> WallpaperManager.FLAG_SYSTEM
+                    WallpaperTarget.LOCK -> WallpaperManager.FLAG_LOCK
+                    WallpaperTarget.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                }
+                context.contentResolver.openInputStream(current.uri)?.use { stream ->
+                    wallpaperManager.setStream(stream, null, true, flags)
+                }
+                withContext(Dispatchers.Main) {
+                    onDone(true)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    onDone(false)
+                }
+            }
+        }
+    }
+
     fun useAs() {
         val current = currentItem ?: return
         try {
+            val shareableUri = if (current.uri.scheme == "file") {
+                val file = File(current.path)
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+            } else {
+                current.uri
+            }
+
             val intent = Intent(Intent.ACTION_ATTACH_DATA).apply {
-                setDataAndType(current.uri, current.mimeType)
+                setDataAndType(shareableUri, current.mimeType)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 putExtra("mimeType", current.mimeType)
+                putExtra(Intent.EXTRA_STREAM, shareableUri)
+                clipData = ClipData.newRawUri("media", shareableUri)
             }
             val chooser = Intent.createChooser(intent, "Use as").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                clipData = ClipData.newRawUri("media", shareableUri)
             }
             context.startActivity(chooser)
         } catch (e: Exception) {

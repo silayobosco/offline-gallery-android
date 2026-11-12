@@ -193,6 +193,11 @@ class MediaRepositoryImpl @Inject constructor(
                 )
                 trashDao.insertTrashItem(trashEntity)
 
+                if (item.isHidden) {
+                    secureStorageManager.deleteSecureFile(item.id)
+                    metaDao.setHidden(item.id, false)
+                }
+
                 // Delete from active MediaStore
                 try {
                     contentResolver.delete(item.uri, null, null)
@@ -280,8 +285,16 @@ class MediaRepositoryImpl @Inject constructor(
     override suspend fun moveToSecureFolder(items: List<MediaItem>): Boolean = withContext(Dispatchers.IO) {
         for (item in items) {
             try {
+                val isVideo = item.mediaType == MediaType.VIDEO
+                val meta = SecureMeta(
+                    displayName = item.displayName,
+                    mimeType = item.mimeType,
+                    isVideo = isVideo,
+                    size = item.size,
+                    dateAdded = item.dateAdded
+                )
                 contentResolver.openInputStream(item.uri)?.use { stream ->
-                    secureStorageManager.encryptAndStore(item.id, stream)
+                    secureStorageManager.encryptAndStore(item.id, stream, meta)
                 }
                 val existing = metaDao.getMeta(item.id)
                 if (existing == null) {
@@ -289,6 +302,10 @@ class MediaRepositoryImpl @Inject constructor(
                 } else {
                     metaDao.setHidden(item.id, true)
                 }
+                try {
+                    val f = File(item.path)
+                    if (f.exists()) f.delete()
+                } catch (ignored: Exception) {}
                 try {
                     contentResolver.delete(item.uri, null, null)
                 } catch (ignored: Exception) {}
@@ -301,15 +318,27 @@ class MediaRepositoryImpl @Inject constructor(
 
     override suspend fun restoreFromSecureFolder(mediaId: Long): Boolean = withContext(Dispatchers.IO) {
         try {
+            val meta = secureStorageManager.getSecureMeta(mediaId)
+            val isVideo = meta?.isVideo ?: false
             val inputStream = secureStorageManager.decryptToStream(mediaId)
+            val ext = if (isVideo) "mp4" else "jpg"
+            val displayName = meta?.displayName ?: "restored_$mediaId.$ext"
+            val mimeType = meta?.mimeType ?: if (isVideo) "video/mp4" else "image/jpeg"
+
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "restored_$mediaId.jpg")
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/SecureRestored")
+                    val folder = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "$folder/SecureRestored")
                 }
             }
-            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            val collectionUri = if (isVideo) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+            val uri = contentResolver.insert(collectionUri, values)
             if (uri != null) {
                 contentResolver.openOutputStream(uri)?.use { out ->
                     inputStream.copyTo(out)
@@ -319,6 +348,7 @@ class MediaRepositoryImpl @Inject constructor(
             metaDao.setHidden(mediaId, false)
             true
         } catch (e: Exception) {
+            e.printStackTrace()
             false
         }
     }
@@ -326,17 +356,20 @@ class MediaRepositoryImpl @Inject constructor(
     override fun getSecureItems(): Flow<List<MediaItem>> {
         return metaDao.getHiddenMediaIds().map { hiddenIds ->
             hiddenIds.mapNotNull { id ->
-                val file = secureStorageManager.getSecureFile(id)
-                if (file.exists()) {
+                val encFile = secureStorageManager.getSecureFile(id)
+                if (encFile.exists()) {
+                    val meta = secureStorageManager.getSecureMeta(id)
+                    val isVideo = meta?.isVideo ?: false
+                    val decryptedFile = secureStorageManager.getDecryptedFile(id, isVideo)
                     MediaItem(
                         id = id,
-                        uri = Uri.fromFile(file),
-                        path = file.absolutePath,
-                        displayName = "Secure Item $id",
-                        mimeType = "image/jpeg",
-                        mediaType = MediaType.IMAGE,
-                        size = file.length(),
-                        dateAdded = System.currentTimeMillis() / 1000,
+                        uri = Uri.fromFile(decryptedFile),
+                        path = decryptedFile.absolutePath,
+                        displayName = meta?.displayName ?: "Secure Item $id",
+                        mimeType = meta?.mimeType ?: if (isVideo) "video/mp4" else "image/jpeg",
+                        mediaType = if (isVideo) MediaType.VIDEO else MediaType.IMAGE,
+                        size = meta?.size ?: encFile.length(),
+                        dateAdded = meta?.dateAdded ?: (System.currentTimeMillis() / 1000),
                         dateTaken = System.currentTimeMillis(),
                         isHidden = true
                     )

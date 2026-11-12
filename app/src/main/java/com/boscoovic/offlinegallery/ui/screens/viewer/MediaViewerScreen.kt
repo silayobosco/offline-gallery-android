@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
@@ -115,6 +117,7 @@ fun MediaViewerScreen(
     val context = LocalContext.current
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showWallpaperDialog by remember { mutableStateOf(false) }
 
     // Heart pop animation state for double-tap liking
     var heartAnimTrigger by remember { mutableLongStateOf(0L) }
@@ -771,12 +774,22 @@ fun MediaViewerScreen(
         if (uiState.showMoreSheet && currentItem != null) {
             MediaViewerMoreSheet(
                 onDismiss = { viewModel.toggleMoreSheet(false) },
-                onUseAs = { viewModel.useAs() },
-                onHide = {
-                    viewModel.hideCurrent { isLastItem ->
-                        Toast.makeText(context, "Item hidden", Toast.LENGTH_SHORT).show()
-                        if (isLastItem) {
-                            onBack()
+                onSetAsWallpaper = { showWallpaperDialog = true },
+                isSecureContext = viewModel.isSecureContext,
+                onSecureAction = {
+                    if (viewModel.isSecureContext) {
+                        viewModel.restoreFromSecureFolder { isLastItem ->
+                            Toast.makeText(context, "Restored to Gallery", Toast.LENGTH_SHORT).show()
+                            if (isLastItem) {
+                                onBack()
+                            }
+                        }
+                    } else {
+                        viewModel.moveToSecureFolder { isLastItem ->
+                            Toast.makeText(context, "Moved to Secure Folder", Toast.LENGTH_SHORT).show()
+                            if (isLastItem) {
+                                onBack()
+                            }
                         }
                     }
                 },
@@ -788,6 +801,65 @@ fun MediaViewerScreen(
                 },
                 onInfo = { viewModel.toggleDetailsSheet(true) },
                 onDelete = { showDeleteConfirmDialog = true }
+            )
+        }
+
+        // Set as Wallpaper Dialog
+        if (showWallpaperDialog && currentItem != null) {
+            AlertDialog(
+                onDismissRequest = { showWallpaperDialog = false },
+                title = { Text("Set as wallpaper") },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        WallpaperOptionRow(title = "Home screen") {
+                            showWallpaperDialog = false
+                            viewModel.setAsWallpaper(WallpaperTarget.HOME) { success ->
+                                Toast.makeText(
+                                    context,
+                                    if (success) "Home screen wallpaper set" else "Failed to set wallpaper",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        WallpaperOptionRow(title = "Lock screen") {
+                            showWallpaperDialog = false
+                            viewModel.setAsWallpaper(WallpaperTarget.LOCK) { success ->
+                                Toast.makeText(
+                                    context,
+                                    if (success) "Lock screen wallpaper set" else "Failed to set wallpaper",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        WallpaperOptionRow(title = "Home and lock screens") {
+                            showWallpaperDialog = false
+                            viewModel.setAsWallpaper(WallpaperTarget.BOTH) { success ->
+                                Toast.makeText(
+                                    context,
+                                    if (success) "Wallpaper applied to both screens" else "Failed to set wallpaper",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        WallpaperOptionRow(title = "Other apps / Contact photo...") {
+                            showWallpaperDialog = false
+                            viewModel.useAs()
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showWallpaperDialog = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
             )
         }
 
@@ -850,12 +922,34 @@ fun MediaViewerScreen(
     }
 }
 
+@Composable
+private fun WallpaperOptionRow(
+    title: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MediaViewerMoreSheet(
     onDismiss: () -> Unit,
-    onUseAs: () -> Unit,
-    onHide: () -> Unit,
+    onSetAsWallpaper: () -> Unit,
+    isSecureContext: Boolean,
+    onSecureAction: () -> Unit,
     onMove: () -> Unit,
     onEditIn: () -> Unit,
     onInfo: () -> Unit,
@@ -874,18 +968,18 @@ private fun MediaViewerMoreSheet(
         ) {
             MoreSheetItem(
                 icon = Icons.Default.Wallpaper,
-                title = "Use as",
+                title = "Set as wallpaper",
                 onClick = {
                     onDismiss()
-                    onUseAs()
+                    onSetAsWallpaper()
                 }
             )
             MoreSheetItem(
-                icon = Icons.Default.VisibilityOff,
-                title = "Hide",
+                icon = if (isSecureContext) Icons.Default.Restore else Icons.Default.Lock,
+                title = if (isSecureContext) "Restore to Gallery" else "Move to Secure Folder",
                 onClick = {
                     onDismiss()
-                    onHide()
+                    onSecureAction()
                 }
             )
             MoreSheetItem(

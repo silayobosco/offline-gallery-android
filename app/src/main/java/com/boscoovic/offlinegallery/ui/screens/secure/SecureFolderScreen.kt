@@ -51,14 +51,18 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.graphics.Color
 import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.data.model.MediaType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecureFolderScreen(
     viewModel: SecureFolderViewModel,
     onBack: () -> Unit,
+    onMediaClick: (MediaItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -191,6 +195,7 @@ fun SecureFolderScreen(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(6.dp))
+                                .clickable { onMediaClick(item) }
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -202,6 +207,24 @@ fun SecureFolderScreen(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
+
+                            if (item.mediaType == MediaType.VIDEO) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color.Black.copy(alpha = 0.6f))
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
 
                             // Restore button
                             IconButton(
