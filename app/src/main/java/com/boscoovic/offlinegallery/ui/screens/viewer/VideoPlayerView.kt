@@ -91,6 +91,7 @@ fun VideoPlayerView(
     playPauseToggleTrigger: Long,
     seekPositionRequest: Long?,
     videoEndAction: VideoEndAction = VideoEndAction.REPEAT_ONE,
+    playbackSpeed: Float = 1.0f,
     onVideoEnded: () -> Unit = {},
     onPlayerStateUpdated: (isPlaying: Boolean, currentPositionMs: Long, durationMs: Long) -> Unit,
     onTap: () -> Unit,
@@ -115,6 +116,7 @@ fun VideoPlayerView(
             prepare()
             playWhenReady = false
             repeatMode = if (videoEndAction == VideoEndAction.REPEAT_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            setPlaybackSpeed(playbackSpeed)
         }
     }
 
@@ -127,17 +129,27 @@ fun VideoPlayerView(
         }
     }
 
+    // Dynamic playback speed
+    LaunchedEffect(playbackSpeed, isSpeedUpActive, isSpeedLocked) {
+        if (isSpeedUpActive || isSpeedLocked) {
+            exoPlayer.setPlaybackSpeed(2.0f)
+        } else {
+            exoPlayer.setPlaybackSpeed(playbackSpeed)
+        }
+    }
+
     // Handle Active Page playback
     LaunchedEffect(isActive) {
         if (isActive) {
             exoPlayer.playWhenReady = true
             exoPlayer.play()
+            exoPlayer.setPlaybackSpeed(playbackSpeed)
         } else {
             exoPlayer.playWhenReady = false
             exoPlayer.pause()
             isSpeedUpActive = false
             isSpeedLocked = false
-            exoPlayer.setPlaybackSpeed(1.0f)
+            exoPlayer.setPlaybackSpeed(playbackSpeed)
         }
         onPlayerStateUpdated(
             exoPlayer.isPlaying,
@@ -300,7 +312,7 @@ fun VideoPlayerView(
             onSpeedEnd = {
                 if (!isSpeedLocked) {
                     isSpeedUpActive = false
-                    exoPlayer.setPlaybackSpeed(1.0f)
+                    exoPlayer.setPlaybackSpeed(playbackSpeed)
                 }
                 slideDownProgress = 0f
             },
@@ -308,7 +320,7 @@ fun VideoPlayerView(
                 if (isSpeedLocked) {
                     isSpeedLocked = false
                     isSpeedUpActive = false
-                    exoPlayer.setPlaybackSpeed(1.0f)
+                    exoPlayer.setPlaybackSpeed(playbackSpeed)
                 } else {
                     onTap()
                 }
@@ -335,7 +347,7 @@ fun VideoPlayerView(
                         // Tap pill to reset speed
                         isSpeedLocked = false
                         isSpeedUpActive = false
-                        exoPlayer.setPlaybackSpeed(1.0f)
+                        exoPlayer.setPlaybackSpeed(playbackSpeed)
                     }
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {

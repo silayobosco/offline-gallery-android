@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
@@ -164,8 +165,9 @@ fun MediaViewerScreen(
 
     val coroutineScope = rememberCoroutineScope()
     var videoEndAction by rememberSaveable { mutableStateOf(VideoEndAction.REPEAT_ONE) }
+    var playbackSpeed by rememberSaveable { mutableFloatStateOf(1.0f) }
     var feedbackNotice by remember { mutableStateOf<String?>(null) }
-    var showShuffleMenu by remember { mutableStateOf(false) }
+    var showQueueMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(feedbackNotice) {
         if (feedbackNotice != null) {
@@ -235,6 +237,7 @@ fun MediaViewerScreen(
                     playPauseToggleTrigger = if (isActive) playPauseToggleTrigger else 0L,
                     seekPositionRequest = if (isActive) seekPositionRequest else null,
                     videoEndAction = videoEndAction,
+                    playbackSpeed = playbackSpeed,
                     onVideoEnded = {
                         val nextIdx = pagerState.currentPage + 1
                         if (nextIdx < uiState.items.size) {
@@ -353,13 +356,53 @@ fun MediaViewerScreen(
                     }
                 }
 
-                // Right: Shuffle toggle (Folder / Universal / Off) + Slideshow button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box {
-                        IconButton(
+                // Right: Top Kebab Menu controlling Queue & Playback (Shuffle, Video End Behavior, Playback Speed, Slideshow)
+                Box {
+                    IconButton(
+                        onClick = { showQueueMenu = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.45f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Queue & Playback controls",
+                            tint = Color.White
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showQueueMenu,
+                        onDismissRequest = { showQueueMenu = false }
+                    ) {
+                        // 1. Shuffle
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Shuffle", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = when (uiState.shuffleMode) {
+                                            ShuffleMode.OFF -> "Off (Normal order)"
+                                            ShuffleMode.FOLDER -> "Within folder (${currentItem?.bucketName ?: "Folder"})"
+                                            ShuffleMode.UNIVERSAL -> "Universal (All media)"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (uiState.shuffleMode != ShuffleMode.OFF) MaterialTheme.colorScheme.primary else Color.Gray
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = when (uiState.shuffleMode) {
+                                        ShuffleMode.OFF -> Icons.Default.Shuffle
+                                        ShuffleMode.FOLDER -> Icons.Default.FolderSpecial
+                                        ShuffleMode.UNIVERSAL -> Icons.Default.Shuffle
+                                    },
+                                    contentDescription = null,
+                                    tint = if (uiState.shuffleMode != ShuffleMode.OFF) MaterialTheme.colorScheme.primary else Color.White
+                                )
+                            },
                             onClick = {
                                 val nextMode = viewModel.cycleShuffleMode()
                                 feedbackNotice = when (nextMode) {
@@ -367,80 +410,91 @@ fun MediaViewerScreen(
                                     ShuffleMode.FOLDER -> "Shuffle: Within folder (${currentItem?.bucketName ?: "Folder"})"
                                     ShuffleMode.UNIVERSAL -> "Shuffle: Universal (All media)"
                                 }
+                            }
+                        )
+
+                        // 2. When Video Ends (Repeat / Loop / Next / Stop)
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("When Video Ends", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = when (videoEndAction) {
+                                            VideoEndAction.REPEAT_ONE -> "Repeat same video (Loop)"
+                                            VideoEndAction.NEXT -> "Auto play next item"
+                                            VideoEndAction.STOP -> "Stop at end"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when (uiState.shuffleMode) {
-                                        ShuffleMode.OFF -> Color.Black.copy(alpha = 0.45f)
-                                        ShuffleMode.FOLDER -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f)
-                                        ShuffleMode.UNIVERSAL -> MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                                    }
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = when (videoEndAction) {
+                                        VideoEndAction.REPEAT_ONE -> Icons.Default.RepeatOne
+                                        VideoEndAction.NEXT -> Icons.Default.SkipNext
+                                        VideoEndAction.STOP -> Icons.Default.StopCircle
+                                    },
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
-                        ) {
-                            Icon(
-                                imageVector = when (uiState.shuffleMode) {
-                                    ShuffleMode.OFF -> Icons.Default.Shuffle
-                                    ShuffleMode.FOLDER -> Icons.Default.FolderSpecial
-                                    ShuffleMode.UNIVERSAL -> Icons.Default.Shuffle
-                                },
-                                contentDescription = "Shuffle",
-                                tint = Color.White
-                            )
-                        }
+                            },
+                            onClick = {
+                                val nextAction = when (videoEndAction) {
+                                    VideoEndAction.REPEAT_ONE -> VideoEndAction.NEXT
+                                    VideoEndAction.NEXT -> VideoEndAction.STOP
+                                    VideoEndAction.STOP -> VideoEndAction.REPEAT_ONE
+                                }
+                                videoEndAction = nextAction
+                                feedbackNotice = when (nextAction) {
+                                    VideoEndAction.REPEAT_ONE -> "When video ends: Repeat same video 🔂"
+                                    VideoEndAction.NEXT -> "When video ends: Auto play next ⏭️"
+                                    VideoEndAction.STOP -> "When video ends: Stop at end ⏹️"
+                                }
+                            }
+                        )
 
-                        DropdownMenu(
-                            expanded = showShuffleMenu,
-                            onDismissRequest = { showShuffleMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Normal Order (Shuffle Off)") },
-                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.OFF) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    showShuffleMenu = false
-                                    viewModel.setShuffleMode(ShuffleMode.OFF)
-                                    feedbackNotice = "Shuffle: Off (Normal order)"
+                        // 3. Playback Speed toggle
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Playback Speed", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = "${playbackSpeed}x (Tap to toggle: 0.5x, 1x, 1.25x, 1.5x, 2x)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Within Folder (${currentItem?.bucketName ?: "Folder"})") },
-                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.FOLDER) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    showShuffleMenu = false
-                                    viewModel.setShuffleMode(ShuffleMode.FOLDER)
-                                    feedbackNotice = "Shuffle: Within folder (${currentItem?.bucketName ?: "Folder"})"
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Universal (All Media)") },
-                                trailingIcon = if (uiState.shuffleMode == ShuffleMode.UNIVERSAL) {
-                                    { Icon(Icons.Default.Check, contentDescription = null) }
-                                } else null,
-                                onClick = {
-                                    showShuffleMenu = false
-                                    viewModel.setShuffleMode(ShuffleMode.UNIVERSAL)
-                                    feedbackNotice = "Shuffle: Universal (All media)"
-                                }
-                            )
-                        }
-                    }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = if (playbackSpeed != 1.0f) MaterialTheme.colorScheme.primary else Color.White
+                                )
+                            },
+                            onClick = {
+                                val speeds = listOf(1.0f, 1.25f, 1.5f, 2.0f, 0.5f)
+                                val currentIdx = speeds.indexOfFirst { kotlin.math.abs(it - playbackSpeed) < 0.05f }
+                                val nextSpeed = if (currentIdx >= 0) speeds[(currentIdx + 1) % speeds.size] else 1.0f
+                                playbackSpeed = nextSpeed
+                                feedbackNotice = "Playback Speed: ${nextSpeed}x"
+                            }
+                        )
 
-                    IconButton(
-                        onClick = onSlideshowClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.45f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = stringResource(R.string.slideshow),
-                            tint = Color.White
+                        HorizontalDivider()
+
+                        // 4. Start Slideshow
+                        DropdownMenuItem(
+                            text = { Text("Start Slideshow") },
+                            leadingIcon = {
+                                Icon(Icons.Default.PlayCircle, contentDescription = null)
+                            },
+                            onClick = {
+                                showQueueMenu = false
+                                onSlideshowClick()
+                            }
                         )
                     }
                 }
@@ -511,7 +565,7 @@ fun MediaViewerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Play / Pause & Repeat Loop (Only for videos)
+                // Play / Pause (Only for videos)
                 if (currentItem?.mediaType == MediaType.VIDEO) {
                     TikTokActionButton(
                         icon = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -519,37 +573,6 @@ fun MediaViewerScreen(
                         iconTint = Color.White,
                         onClick = {
                             playPauseToggleTrigger = System.currentTimeMillis()
-                        }
-                    )
-
-                    // Repeat Loop button (when video ends: repeat same, next, stop)
-                    TikTokActionButton(
-                        icon = when (videoEndAction) {
-                            VideoEndAction.REPEAT_ONE -> Icons.Default.RepeatOne
-                            VideoEndAction.NEXT -> Icons.Default.SkipNext
-                            VideoEndAction.STOP -> Icons.Default.StopCircle
-                        },
-                        label = when (videoEndAction) {
-                            VideoEndAction.REPEAT_ONE -> "Loop"
-                            VideoEndAction.NEXT -> "Next"
-                            VideoEndAction.STOP -> "Stop"
-                        },
-                        iconTint = when (videoEndAction) {
-                            VideoEndAction.REPEAT_ONE, VideoEndAction.NEXT -> MaterialTheme.colorScheme.primary
-                            VideoEndAction.STOP -> Color.White.copy(alpha = 0.75f)
-                        },
-                        onClick = {
-                            val nextAction = when (videoEndAction) {
-                                VideoEndAction.REPEAT_ONE -> VideoEndAction.NEXT
-                                VideoEndAction.NEXT -> VideoEndAction.STOP
-                                VideoEndAction.STOP -> VideoEndAction.REPEAT_ONE
-                            }
-                            videoEndAction = nextAction
-                            feedbackNotice = when (nextAction) {
-                                VideoEndAction.REPEAT_ONE -> "When video ends: Repeat same video 🔂"
-                                VideoEndAction.NEXT -> "When video ends: Auto play next ⏭️"
-                                VideoEndAction.STOP -> "When video ends: Stop at end ⏹️"
-                            }
                         }
                     )
                 }
