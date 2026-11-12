@@ -142,14 +142,14 @@ fun MainGalleryScreen(
     }
 
     // Samsung One UI Reachability Viewing Area Height:
-    // Generously expanded at rest (~168dp) so content is easily within thumb reach.
+    // Generously expanded at rest (260.dp) so content is easily within thumb reach, consistent across views.
     // Shrinks down to 0dp as the user scrolls, and expands back when scrolled to the top!
     val viewingAreaHeight by animateDpAsState(
-        targetValue = if (isScrolled) 0.dp else 168.dp,
+        targetValue = if (isScrolled) 0.dp else 260.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "viewingAreaHeight"
     )
-    val heroAlpha = ((viewingAreaHeight.value - 36f) / 132f).coerceIn(0f, 1f)
+    val heroAlpha = ((viewingAreaHeight.value - 50f) / 210f).coerceIn(0f, 1f)
 
     // Continuous page fraction (0f = Pictures, 1f = Albums) for real-time sliding tab indicator
     val pageProgress by remember {

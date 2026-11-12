@@ -138,13 +138,14 @@ fun AlbumDetailScreen(
     }
 
     // Samsung One UI Reachability Viewing Area Height:
-    // Expands to 160dp at rest (when top images are reached) so content is easily within thumb reach.
+    // Generously expanded at rest (260.dp) so content is easily within thumb reach, matching MainGalleryScreen.
     // Shrinks down to 0dp when scrolled down!
     val viewingAreaHeight by animateDpAsState(
-        targetValue = if (isScrolled) 0.dp else 160.dp,
+        targetValue = if (isScrolled) 0.dp else 260.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "albumViewingAreaHeight"
     )
+    val heroAlpha = ((viewingAreaHeight.value - 50f) / 210f).coerceIn(0f, 1f)
 
     // Menu and Dialog states
     var showMenu by remember { mutableStateOf(false) }
@@ -213,29 +214,83 @@ fun AlbumDetailScreen(
             .onGloballyPositioned { rootPosition = it.positionInRoot() }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Samsung Gallery Top Bar
+            // Samsung One UI Reachability Viewing Area (Expands to 260dp at top, shrinks when scrolling down)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(viewingAreaHeight)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (viewingAreaHeight > 36.dp) {
+                    Column(
+                        modifier = Modifier.graphicsLayer {
+                            alpha = heroAlpha
+                            translationY = (1f - heroAlpha) * -20f
+                        }
+                    ) {
+                        Text(
+                            text = uiState.albumName,
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 36.sp,
+                                letterSpacing = (-0.5).sp
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = uiState.subtitle.ifEmpty { "${uiState.items.size} items" },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Samsung Gallery Top Bar (Sits directly above the media area, moving up to the top when scrolled)
             TopAppBar(
                 title = {
                     AnimatedVisibility(
                         visible = isScrolled,
-                        enter = fadeIn(),
-                        exit = fadeOut()
+                        enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+                        exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
                     ) {
-                        Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = uiState.albumName,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp
+                                ),
                                 fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
-                            if (uiState.subtitle.isNotEmpty()) {
-                                Text(
-                                    text = uiState.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(
+                                text = "${uiState.items.size}",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp
+                                ),
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
                         }
                     }
                 },
@@ -366,36 +421,6 @@ fun AlbumDetailScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
-
-            // Samsung One UI Reachability Viewing Area (Expands when at top, shrinks when scrolling down)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(viewingAreaHeight)
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-                contentAlignment = Alignment.BottomStart
-            ) {
-                if (viewingAreaHeight > 40.dp) {
-                    Column {
-                        Text(
-                            text = uiState.albumName,
-                            style = MaterialTheme.typography.displayMedium.copy(
-                                fontSize = 34.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = uiState.subtitle.ifEmpty { "${uiState.items.size} items" },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
 
             // Main Content Area with Optional Folder Sidebar on the Left
             Row(
