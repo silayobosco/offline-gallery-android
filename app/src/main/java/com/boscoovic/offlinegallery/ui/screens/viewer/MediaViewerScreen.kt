@@ -226,9 +226,10 @@ fun MediaViewerScreen(
         // Vertical Pager (TikTok style)
         VerticalPager(
             state = pagerState,
+            key = { page -> uiState.items.getOrNull(page)?.id ?: page },
             modifier = Modifier.fillMaxSize()
         ) { page ->
-            val item = uiState.items[page]
+            val item = uiState.items.getOrNull(page) ?: return@VerticalPager
             val isActive = page == pagerState.currentPage
             if (item.mediaType == MediaType.VIDEO) {
                 VideoPlayerView(
@@ -722,8 +723,8 @@ fun MediaViewerScreen(
                     TextButton(
                         onClick = {
                             showDeleteConfirmDialog = false
-                            viewModel.deleteCurrent(onDeleted = {
-                                if (uiState.items.size <= 1) {
+                            viewModel.deleteCurrent(onDeleted = { isLastItem ->
+                                if (isLastItem) {
                                     onBack()
                                 }
                             })
@@ -755,9 +756,9 @@ fun MediaViewerScreen(
                 onDismiss = { viewModel.toggleMoreSheet(false) },
                 onUseAs = { viewModel.useAs() },
                 onHide = {
-                    viewModel.hideCurrent {
+                    viewModel.hideCurrent { isLastItem ->
                         Toast.makeText(context, "Item hidden", Toast.LENGTH_SHORT).show()
-                        if (uiState.items.size <= 1) {
+                        if (isLastItem) {
                             onBack()
                         }
                     }
@@ -794,9 +795,9 @@ fun MediaViewerScreen(
                                         .clip(RoundedCornerShape(10.dp))
                                         .clickable {
                                             showMoveDialog = false
-                                            viewModel.moveCurrentToAlbum(album) {
+                                            viewModel.moveCurrentToAlbum(album) { isLastItem ->
                                                 Toast.makeText(context, "Moved to ${album.name}", Toast.LENGTH_SHORT).show()
-                                                if (uiState.items.size <= 1) {
+                                                if (isLastItem) {
                                                     onBack()
                                                 }
                                             }

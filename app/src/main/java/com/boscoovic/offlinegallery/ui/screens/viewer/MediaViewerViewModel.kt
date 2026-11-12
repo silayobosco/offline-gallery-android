@@ -27,6 +27,11 @@ enum class ShuffleMode {
     UNIVERSAL
 }
 
+enum class ScrollDirection {
+    FORWARD,  // scrolled down (next)
+    BACKWARD  // scrolled up (previous)
+}
+
 data class MediaViewerUiState(
     val items: List<MediaItem> = emptyList(),
     val currentIndex: Int = 0,
@@ -60,6 +65,7 @@ class MediaViewerViewModel @Inject constructor(
     private val _shuffleMode = MutableStateFlow(ShuffleMode.OFF)
     private val _currentExif = MutableStateFlow<ExifData?>(null)
     private val _allAlbums = MutableStateFlow<List<Album>>(emptyList())
+    private var lastScrollDirection = ScrollDirection.FORWARD
 
     val uiState: StateFlow<MediaViewerUiState> = combine(
         _items,
@@ -132,21 +138,63 @@ class MediaViewerViewModel @Inject constructor(
                 val curr = currentItem
                 when (_shuffleMode.value) {
                     ShuffleMode.OFF -> {
+                        val isInitial = _items.value.isEmpty()
                         _items.value = list
-                        val targetIndex = list.indexOfFirst { it.id == (curr?.id ?: initialMediaId) }
-                        if (targetIndex >= 0) {
-                            _currentIndex.value = targetIndex
-                            loadExif(list[targetIndex])
-                        } else if (list.isNotEmpty()) {
-                            _currentIndex.value = 0
-                            loadExif(list[0])
+                        if (isInitial) {
+                            val targetIndex = list.indexOfFirst { it.id == initialMediaId }
+                            if (targetIndex >= 0) {
+                                _currentIndex.value = targetIndex
+                                loadExif(list[targetIndex])
+                            } else if (list.isNotEmpty()) {
+                                _currentIndex.value = 0
+                                loadExif(list[0])
+                            }
+                        } else {
+                            val currId = curr?.id
+                            val targetIndex = if (currId != null) list.indexOfFirst { it.id == currId } else -1
+                            if (targetIndex >= 0) {
+                                _currentIndex.value = targetIndex
+                                loadExif(list[targetIndex])
+                            } else if (list.isNotEmpty()) {
+                                val oldIndex = _currentIndex.value
+                                val fallbackIndex = when (lastScrollDirection) {
+                                    ScrollDirection.FORWARD -> oldIndex.coerceIn(0, list.size - 1)
+                                    ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, list.size - 1)
+                                }
+                                _currentIndex.value = fallbackIndex
+                                loadExif(list[fallbackIndex])
+                            } else {
+                                _currentIndex.value = 0
+                            }
                         }
                     }
-                    ShuffleMode.FOLDER -> {
-                        applyShuffle(ShuffleMode.FOLDER)
-                    }
-                    ShuffleMode.UNIVERSAL -> {
-                        applyShuffle(ShuffleMode.UNIVERSAL)
+                    ShuffleMode.FOLDER, ShuffleMode.UNIVERSAL -> {
+                        if (_items.value.isEmpty()) {
+                            applyShuffle(_shuffleMode.value)
+                        } else {
+                            val validIds = list.map { it.id }.toSet()
+                            val currentQueue = _items.value
+                            val updatedQueue = currentQueue.filter { it.id in validIds }
+                                .map { item -> list.firstOrNull { it.id == item.id } ?: item }
+                            _items.value = updatedQueue
+
+                            val currId = curr?.id
+                            val targetIndex = if (currId != null) updatedQueue.indexOfFirst { it.id == currId } else -1
+                            if (targetIndex >= 0) {
+                                _currentIndex.value = targetIndex
+                                loadExif(updatedQueue[targetIndex])
+                            } else if (updatedQueue.isNotEmpty()) {
+                                val oldIndex = _currentIndex.value
+                                val fallbackIndex = when (lastScrollDirection) {
+                                    ScrollDirection.FORWARD -> oldIndex.coerceIn(0, updatedQueue.size - 1)
+                                    ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, updatedQueue.size - 1)
+                                }
+                                _currentIndex.value = fallbackIndex
+                                loadExif(updatedQueue[fallbackIndex])
+                            } else {
+                                _currentIndex.value = 0
+                            }
+                        }
                     }
                 }
             }
@@ -216,6 +264,12 @@ class MediaViewerViewModel @Inject constructor(
     }
 
     fun onPageChanged(index: Int) {
+        val previousIndex = _currentIndex.value
+        if (index > previousIndex) {
+            lastScrollDirection = ScrollDirection.FORWARD
+        } else if (index < previousIndex) {
+            lastScrollDirection = ScrollDirection.BACKWARD
+        }
         _currentIndex.value = index
         val items = _items.value
         if (index in items.indices) {
@@ -249,28 +303,85 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
-    fun deleteCurrent(onDeleted: () -> Unit) {
+    fun deleteCurrent(onDeleted: (isLastItem: Boolean) -> Unit = {}) {
         val current = currentItem ?: return
+        val currentId = current.id
+        val oldIndex = _currentIndex.value
+        val currentList = _items.value
+        val remainingList = currentList.filter { it.id != currentId }
+        val wasLastItem = remainingList.isEmpty()
+
+        if (remainingList.isNotEmpty()) {
+            val targetIndex = when (lastScrollDirection) {
+                ScrollDirection.FORWARD -> oldIndex.coerceIn(0, remainingList.size - 1)
+                ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, remainingList.size - 1)
+            }
+            _items.value = remainingList
+            _currentIndex.value = targetIndex
+            loadExif(remainingList[targetIndex])
+        } else {
+            _items.value = emptyList()
+            _currentIndex.value = 0
+        }
+
         viewModelScope.launch {
             repository.moveToTrash(listOf(current))
-            onDeleted()
+            onDeleted(wasLastItem)
         }
     }
 
-    fun hideCurrent(onHidden: () -> Unit) {
+    fun hideCurrent(onHidden: (isLastItem: Boolean) -> Unit = {}) {
         val current = currentItem ?: return
+        val currentId = current.id
+        val oldIndex = _currentIndex.value
+        val currentList = _items.value
+        val remainingList = currentList.filter { it.id != currentId }
+        val wasLastItem = remainingList.isEmpty()
+
+        if (remainingList.isNotEmpty()) {
+            val targetIndex = when (lastScrollDirection) {
+                ScrollDirection.FORWARD -> oldIndex.coerceIn(0, remainingList.size - 1)
+                ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, remainingList.size - 1)
+            }
+            _items.value = remainingList
+            _currentIndex.value = targetIndex
+            loadExif(remainingList[targetIndex])
+        } else {
+            _items.value = emptyList()
+            _currentIndex.value = 0
+        }
+
         viewModelScope.launch {
             repository.setHidden(current.id, true)
-            onHidden()
+            onHidden(wasLastItem)
         }
     }
 
-    fun moveCurrentToAlbum(targetAlbum: Album, onMoved: () -> Unit) {
+    fun moveCurrentToAlbum(targetAlbum: Album, onMoved: (isLastItem: Boolean) -> Unit = {}) {
         val current = currentItem ?: return
+        val currentId = current.id
+        val oldIndex = _currentIndex.value
+        val currentList = _items.value
+        val remainingList = currentList.filter { it.id != currentId }
+        val wasLastItem = remainingList.isEmpty()
+
+        if (remainingList.isNotEmpty()) {
+            val targetIndex = when (lastScrollDirection) {
+                ScrollDirection.FORWARD -> oldIndex.coerceIn(0, remainingList.size - 1)
+                ScrollDirection.BACKWARD -> (oldIndex - 1).coerceIn(0, remainingList.size - 1)
+            }
+            _items.value = remainingList
+            _currentIndex.value = targetIndex
+            loadExif(remainingList[targetIndex])
+        } else {
+            _items.value = emptyList()
+            _currentIndex.value = 0
+        }
+
         viewModelScope.launch {
             val success = repository.moveMediaToAlbum(listOf(current), targetAlbum)
             if (success) {
-                onMoved()
+                onMoved(wasLastItem)
             }
         }
     }
