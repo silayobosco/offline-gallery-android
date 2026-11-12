@@ -92,6 +92,7 @@ fun VideoPlayerView(
     seekPositionRequest: Long?,
     videoEndAction: VideoEndAction = VideoEndAction.REPEAT_ONE,
     playbackSpeed: Float = 1.0f,
+    isMuted: Boolean = false,
     onVideoEnded: () -> Unit = {},
     onPlayerStateUpdated: (isPlaying: Boolean, currentPositionMs: Long, durationMs: Long) -> Unit,
     onTap: () -> Unit,
@@ -117,7 +118,13 @@ fun VideoPlayerView(
             playWhenReady = false
             repeatMode = if (videoEndAction == VideoEndAction.REPEAT_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             setPlaybackSpeed(playbackSpeed)
+            volume = if (isMuted) 0f else 1f
         }
+    }
+
+    // Dynamic volume (Mute / Unmute)
+    LaunchedEffect(isMuted) {
+        exoPlayer.volume = if (isMuted) 0f else 1f
     }
 
     // Dynamic repeat mode according to videoEndAction

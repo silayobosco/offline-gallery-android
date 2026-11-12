@@ -34,6 +34,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -168,6 +170,7 @@ fun MediaViewerScreen(
     var playbackSpeed by rememberSaveable { mutableFloatStateOf(1.0f) }
     var feedbackNotice by remember { mutableStateOf<String?>(null) }
     var showQueueMenu by remember { mutableStateOf(false) }
+    var isMuted by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(feedbackNotice) {
         if (feedbackNotice != null) {
@@ -239,6 +242,7 @@ fun MediaViewerScreen(
                     seekPositionRequest = if (isActive) seekPositionRequest else null,
                     videoEndAction = videoEndAction,
                     playbackSpeed = playbackSpeed,
+                    isMuted = isMuted,
                     onVideoEnded = {
                         val nextIdx = pagerState.currentPage + 1
                         if (nextIdx < uiState.items.size) {
@@ -566,6 +570,19 @@ fun MediaViewerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Mute / Unmute (Only for videos)
+                if (currentItem?.mediaType == MediaType.VIDEO) {
+                    TikTokActionButton(
+                        icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        label = if (isMuted) "Unmute" else "Mute",
+                        iconTint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
+                        onClick = {
+                            isMuted = !isMuted
+                            feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
+                        }
+                    )
+                }
+
                 // Play / Pause (Only for videos)
                 if (currentItem?.mediaType == MediaType.VIDEO) {
                     TikTokActionButton(
