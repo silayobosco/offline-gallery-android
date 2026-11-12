@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,9 +53,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -69,7 +72,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
@@ -275,14 +280,15 @@ fun VideoPlayerView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // TikTok Floating Speed Pill (Top Center)
+        // TikTok Floating Speed Pill (Top Center, clearly below counter pill)
         AnimatedVisibility(
             visible = (isSpeedUpActive || isSpeedLocked) && isActive,
             enter = fadeIn(tween(150)) + slideInVertically(initialOffsetY = { -60 }),
             exit = fadeOut(tween(200)) + slideOutVertically(targetOffsetY = { -60 }),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 96.dp)
+                .statusBarsPadding()
+                .padding(top = 100.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -350,12 +356,12 @@ fun VideoPlayerView(
 
 /**
  * TikTok Gesture Surface:
- * - Detects hold (>200ms) with minimal movement to activate 2x playback speed.
- *   Uses PointerEventPass.Initial and calls pointer.consume() to prevent VerticalPager from stealing the touch.
- * - Detects vertical downward slide during hold to lock 2x speed.
+ * - Detects hold (>200ms) with a coroutine timer to activate 2x playback speed even when the finger is held still.
+ * - Detects downward slide while holding (or direct downward slide) to lock 2x speed.
+ *   Uses PointerEventPass.Initial and consumes pointer events to prevent VerticalPager from stealing the touch.
  * - Detects single tap (toggles UI chrome or resets locked speed; does NOT play/pause).
- * - Detects double tap (triggers like animation).
- * - Lets vertical/horizontal swipes pass through unconsumed if rapid movement occurs before 200ms.
+ * - Detects double tap (triggers like heart animation).
+ * - Lets vertical (upward) and horizontal swipes pass through unconsumed for page navigation and details/delete.
  */
 @Composable
 private fun VideoGestureSurface(
@@ -368,79 +374,95 @@ private fun VideoGestureSurface(
     onDoubleTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     var lastTapTime by remember { mutableLongStateOf(0L) }
 
     Box(
         modifier = modifier.pointerInput(isSpeedLocked) {
-            awaitEachGesture {
-                val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-                val downTime = System.currentTimeMillis()
-                val startX = down.position.x
-                val startY = down.position.y
-                val pointerId = down.id
-                var isSpeeding = false
-                var isLocked = false
-                var cancelled = false
+            coroutineScope {
+                val scope = this
+                this@pointerInput.awaitEachGesture {
+                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                    val startPos = down.position
+                    val pointerId = down.id
+                    var isSpeeding = false
+                    var isLocked = false
+                    var isCancelled = false
 
-                while (true) {
-                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                    val pointer = event.changes.firstOrNull { it.id == pointerId } ?: break
+                    // Timer to trigger 2x speed after 200ms of holding still
+                    val speedJob = scope.launch {
+                        delay(200L)
+                        isSpeeding = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onSpeedStart()
+                    }
 
-                    if (!pointer.pressed) {
-                        // Pointer released
-                        val elapsed = System.currentTimeMillis() - downTime
-                        val dx = pointer.position.x - startX
-                        val dy = pointer.position.y - startY
-                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val pointer = event.changes.firstOrNull { it.id == pointerId } ?: break
 
-                        if (!isSpeeding && !cancelled && elapsed < 250L && dist < 30f) {
-                            pointer.consume()
-                            val now = System.currentTimeMillis()
-                            if (now - lastTapTime < 320L) {
-                                onDoubleTap()
-                                lastTapTime = 0L
+                            if (!pointer.pressed) {
+                                // Pointer released
+                                speedJob.cancel()
+                                if (isSpeeding) {
+                                    pointer.consume()
+                                } else if (!isCancelled) {
+                                    val dx = pointer.position.x - startPos.x
+                                    val dy = pointer.position.y - startPos.y
+                                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                    if (dist < 30f) {
+                                        pointer.consume()
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastTapTime < 320L) {
+                                            onDoubleTap()
+                                            lastTapTime = 0L
+                                        } else {
+                                            lastTapTime = now
+                                            onTap()
+                                        }
+                                    }
+                                }
+                                break
+                            }
+
+                            val dx = pointer.position.x - startPos.x
+                            val dy = pointer.position.y - startPos.y
+
+                            if (!isSpeeding) {
+                                if (dy < -35f || kotlin.math.abs(dx) > 35f) {
+                                    // User swiped UP (next video) or swiped LEFT/RIGHT (details/delete)
+                                    isCancelled = true
+                                    speedJob.cancel()
+                                    break // Let VerticalPager or horizontal drag handle it!
+                                } else if (dy > 30f) {
+                                    // User slid DOWN! Activate speed immediately and begin locking!
+                                    isSpeeding = true
+                                    speedJob.cancel()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSpeedStart()
+                                }
                             } else {
-                                lastTapTime = now
-                                onTap()
+                                // Speed is active: consume all pointer events so VerticalPager cannot scroll
+                                pointer.consume()
+
+                                val lockThresholdPx = 100f
+                                val progress = (dy / lockThresholdPx).coerceIn(0f, 1f)
+                                onSlideProgress(progress)
+
+                                if (dy >= lockThresholdPx && !isLocked) {
+                                    isLocked = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onLockTriggered()
+                                }
                             }
                         }
-                        break
-                    }
-
-                    val elapsed = System.currentTimeMillis() - downTime
-                    val dx = pointer.position.x - startX
-                    val dy = pointer.position.y - startY
-                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-
-                    if (!isSpeeding) {
-                        // Rapid movement before 200ms means intentional swipe (page scroll or action swipe)
-                        if (dist > 35f && elapsed < 200L) {
-                            cancelled = true
-                            break
-                        }
-
-                        // Hold threshold reached: start 2x speed!
-                        if (elapsed >= 200L && !cancelled) {
-                            isSpeeding = true
-                            pointer.consume()
-                            onSpeedStart()
-                        }
-                    } else {
-                        // Consume all events in Initial pass so parent VerticalPager cannot intercept
-                        pointer.consume()
-                        val lockThresholdPx = 120f
-                        val progress = (dy / lockThresholdPx).coerceIn(0f, 1f)
-                        onSlideProgress(progress)
-
-                        if (dy >= lockThresholdPx && !isLocked) {
-                            isLocked = true
-                            onLockTriggered()
+                    } finally {
+                        speedJob.cancel()
+                        if (isSpeeding) {
+                            onSpeedEnd()
                         }
                     }
-                }
-
-                if (isSpeeding) {
-                    onSpeedEnd()
                 }
             }
         }
