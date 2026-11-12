@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.settings.DefaultVideoEndAction
 import com.boscoovic.offlinegallery.data.settings.ThemeMode
+import com.boscoovic.offlinegallery.data.settings.ViewerScrollDirection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -256,6 +257,54 @@ fun SettingsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(action.title, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+
+                        Text(
+                            "Viewer Scroll Direction",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "Choose between TikTok-style vertical feed and classic gallery horizontal paging",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        ViewerScrollDirection.values().forEach { direction ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.setViewerScrollDirection(direction) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = uiState.viewerScrollDirection == direction,
+                                    onClick = { viewModel.setViewerScrollDirection(direction) }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        direction.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        if (direction == ViewerScrollDirection.VERTICAL)
+                                            "Swipe up/down between photos; right-side action buttons"
+                                        else
+                                            "Swipe left/right between photos; bottom action bar",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
 

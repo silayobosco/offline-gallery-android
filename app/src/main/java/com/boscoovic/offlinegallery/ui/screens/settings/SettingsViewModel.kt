@@ -6,6 +6,7 @@ import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import com.boscoovic.offlinegallery.data.settings.DefaultVideoEndAction
 import com.boscoovic.offlinegallery.data.settings.SettingsManager
 import com.boscoovic.offlinegallery.data.settings.ThemeMode
+import com.boscoovic.offlinegallery.data.settings.ViewerScrollDirection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +24,7 @@ data class SettingsUiState(
     val autoPlayVideos: Boolean = true,
     val videoEndAction: DefaultVideoEndAction = DefaultVideoEndAction.LOOP,
     val showDetailsBanner: Boolean = true,
+    val viewerScrollDirection: ViewerScrollDirection = ViewerScrollDirection.VERTICAL,
     val trashCount: Int = 0,
     val cacheSizeText: String = "Calculating..."
 )
@@ -42,6 +44,7 @@ class SettingsViewModel @Inject constructor(
         settingsManager.autoPlayVideos,
         settingsManager.videoEndAction,
         settingsManager.showDetailsBanner,
+        settingsManager.viewerScrollDirection,
         repository.getTrashItems().map { it.size },
         _cacheSizeText
     ) { args: Array<Any?> ->
@@ -52,8 +55,9 @@ class SettingsViewModel @Inject constructor(
             autoPlayVideos = args[3] as Boolean,
             videoEndAction = args[4] as DefaultVideoEndAction,
             showDetailsBanner = args[5] as Boolean,
-            trashCount = args[6] as Int,
-            cacheSizeText = args[7] as String
+            viewerScrollDirection = args[6] as ViewerScrollDirection,
+            trashCount = args[7] as Int,
+            cacheSizeText = args[8] as String
         )
     }.stateIn(
         scope = viewModelScope,
@@ -89,6 +93,10 @@ class SettingsViewModel @Inject constructor(
         settingsManager.setShowDetailsBanner(enabled)
     }
 
+    fun setViewerScrollDirection(direction: ViewerScrollDirection) {
+        settingsManager.setViewerScrollDirection(direction)
+    }
+
     fun refreshCacheSize() {
         viewModelScope.launch {
             val bytes = settingsManager.getCacheSizeBytes()
@@ -122,3 +130,4 @@ class SettingsViewModel @Inject constructor(
         }
     }
 }
+

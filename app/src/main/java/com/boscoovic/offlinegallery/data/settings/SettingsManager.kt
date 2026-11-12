@@ -24,6 +24,11 @@ enum class DefaultVideoEndAction(val title: String) {
     STOP("Stop at end")
 }
 
+enum class ViewerScrollDirection(val title: String) {
+    VERTICAL("Vertical (TikTok style)"),
+    HORIZONTAL("Horizontal (Classic Gallery)")
+}
+
 @Singleton
 class SettingsManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -61,6 +66,15 @@ class SettingsManager @Inject constructor(
     private val _showDetailsBanner = MutableStateFlow(prefs.getBoolean(KEY_SHOW_DETAILS_BANNER, true))
     val showDetailsBanner: StateFlow<Boolean> = _showDetailsBanner.asStateFlow()
 
+    private val _viewerScrollDirection = MutableStateFlow(
+        try {
+            ViewerScrollDirection.valueOf(prefs.getString(KEY_SCROLL_DIRECTION, ViewerScrollDirection.VERTICAL.name) ?: ViewerScrollDirection.VERTICAL.name)
+        } catch (e: Exception) {
+            ViewerScrollDirection.VERTICAL
+        }
+    )
+    val viewerScrollDirection: StateFlow<ViewerScrollDirection> = _viewerScrollDirection.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         _themeMode.value = mode
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
@@ -90,6 +104,11 @@ class SettingsManager @Inject constructor(
     fun setShowDetailsBanner(enabled: Boolean) {
         _showDetailsBanner.value = enabled
         prefs.edit().putBoolean(KEY_SHOW_DETAILS_BANNER, enabled).apply()
+    }
+
+    fun setViewerScrollDirection(direction: ViewerScrollDirection) {
+        _viewerScrollDirection.value = direction
+        prefs.edit().putString(KEY_SCROLL_DIRECTION, direction.name).apply()
     }
 
     suspend fun getCacheSizeBytes(): Long = withContext(Dispatchers.IO) {
@@ -124,5 +143,7 @@ class SettingsManager @Inject constructor(
         private const val KEY_AUTO_PLAY_VIDEOS = "pref_auto_play_videos"
         private const val KEY_VIDEO_END_ACTION = "pref_video_end_action"
         private const val KEY_SHOW_DETAILS_BANNER = "pref_show_details_banner"
+        private const val KEY_SCROLL_DIRECTION = "pref_viewer_scroll_direction"
     }
 }
+

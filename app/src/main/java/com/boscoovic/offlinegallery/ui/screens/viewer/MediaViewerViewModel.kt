@@ -13,6 +13,8 @@ import com.boscoovic.offlinegallery.data.model.ExifData
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
+import com.boscoovic.offlinegallery.data.settings.SettingsManager
+import com.boscoovic.offlinegallery.data.settings.ViewerScrollDirection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -40,8 +42,8 @@ enum class ShuffleMode {
 }
 
 enum class ScrollDirection {
-    FORWARD,  // scrolled down (next)
-    BACKWARD  // scrolled up (previous)
+    FORWARD,  // scrolled down / right (next)
+    BACKWARD  // scrolled up / left (previous)
 }
 
 data class MediaViewerUiState(
@@ -53,12 +55,15 @@ data class MediaViewerUiState(
     val isShuffleEnabled: Boolean = false,
     val shuffleMode: ShuffleMode = ShuffleMode.OFF,
     val currentExif: ExifData? = null,
-    val allAlbums: List<Album> = emptyList()
+    val allAlbums: List<Album> = emptyList(),
+    val viewerScrollDirection: ViewerScrollDirection = ViewerScrollDirection.VERTICAL,
+    val showDetailsBanner: Boolean = true
 )
 
 @HiltViewModel
 class MediaViewerViewModel @Inject constructor(
     private val repository: MediaRepository,
+    private val settingsManager: SettingsManager,
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -87,7 +92,9 @@ class MediaViewerViewModel @Inject constructor(
         _showMoreSheet,
         _shuffleMode,
         _currentExif,
-        _allAlbums
+        _allAlbums,
+        settingsManager.viewerScrollDirection,
+        settingsManager.showDetailsBanner
     ) { args: Array<Any?> ->
         val currentShuffleMode = args[5] as ShuffleMode
         @Suppress("UNCHECKED_CAST")
@@ -100,7 +107,9 @@ class MediaViewerViewModel @Inject constructor(
             isShuffleEnabled = currentShuffleMode != ShuffleMode.OFF,
             shuffleMode = currentShuffleMode,
             currentExif = args[6] as ExifData?,
-            allAlbums = args[7] as List<Album>
+            allAlbums = args[7] as List<Album>,
+            viewerScrollDirection = args[8] as ViewerScrollDirection,
+            showDetailsBanner = args[9] as Boolean
         )
     }.stateIn(
         scope = viewModelScope,
@@ -300,6 +309,20 @@ class MediaViewerViewModel @Inject constructor(
 
     fun toggleMoreSheet(show: Boolean) {
         _showMoreSheet.value = show
+    }
+
+    fun toggleScrollDirection(): ViewerScrollDirection {
+        val next = if (uiState.value.viewerScrollDirection == ViewerScrollDirection.VERTICAL) {
+            ViewerScrollDirection.HORIZONTAL
+        } else {
+            ViewerScrollDirection.VERTICAL
+        }
+        settingsManager.setViewerScrollDirection(next)
+        return next
+    }
+
+    fun setScrollDirection(direction: ViewerScrollDirection) {
+        settingsManager.setViewerScrollDirection(direction)
     }
 
     fun toggleFavorite() {

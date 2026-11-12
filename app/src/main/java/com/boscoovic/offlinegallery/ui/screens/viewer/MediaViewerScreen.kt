@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -58,6 +60,8 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
@@ -68,6 +72,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import com.boscoovic.offlinegallery.data.settings.ViewerScrollDirection
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -197,8 +204,13 @@ fun MediaViewerScreen(
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubFraction by remember { mutableFloatStateOf(0f) }
 
-    // Gesture detection: Swipe Left (< -120f) for Details, Swipe Right (> 120f) to Delete
+    val isVertical = uiState.viewerScrollDirection == ViewerScrollDirection.VERTICAL
+
+    // Gesture detection:
+    // In VERTICAL mode: Swipe Left (< -120f) for Details, Swipe Right (> 120f) to Delete
+    // In HORIZONTAL mode: Swipe Up (< -120f) for Details, Swipe Down (> 120f) to Close / Exit
     var totalHorizontalDrag by remember { mutableFloatStateOf(0f) }
+    var totalVerticalDrag by remember { mutableFloatStateOf(0f) }
 
     val handleDoubleTapLike = {
         viewModel.setFavorite(true)
@@ -209,73 +221,110 @@ fun MediaViewerScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(pagerState.currentPage) {
-                detectHorizontalDragGestures(
-                    onDragStart = { totalHorizontalDrag = 0f },
-                    onDragEnd = {
-                        if (totalHorizontalDrag < -120f) {
-                            // Swiped Left -> Open Details
-                            viewModel.toggleDetailsSheet(true)
-                        } else if (totalHorizontalDrag > 120f) {
-                            // Swiped Right -> Prompt Delete
-                            showDeleteConfirmDialog = true
+            .pointerInput(pagerState.currentPage, isVertical) {
+                if (isVertical) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalHorizontalDrag = 0f },
+                        onDragEnd = {
+                            if (totalHorizontalDrag < -120f) {
+                                // Swiped Left -> Open Details
+                                viewModel.toggleDetailsSheet(true)
+                            } else if (totalHorizontalDrag > 120f) {
+                                // Swiped Right -> Prompt Delete
+                                showDeleteConfirmDialog = true
+                            }
+                            totalHorizontalDrag = 0f
+                        },
+                        onDragCancel = { totalHorizontalDrag = 0f },
+                        onHorizontalDrag = { _, dragAmount ->
+                            totalHorizontalDrag += dragAmount
                         }
-                        totalHorizontalDrag = 0f
-                    },
-                    onDragCancel = { totalHorizontalDrag = 0f },
-                    onHorizontalDrag = { _, dragAmount ->
-                        totalHorizontalDrag += dragAmount
-                    }
-                )
+                    )
+                } else {
+                    detectVerticalDragGestures(
+                        onDragStart = { totalVerticalDrag = 0f },
+                        onDragEnd = {
+                            if (totalVerticalDrag < -120f) {
+                                // Swiped Up -> Open Details (Classic Gallery / Samsung One UI)
+                                viewModel.toggleDetailsSheet(true)
+                            } else if (totalVerticalDrag > 120f) {
+                                // Swiped Down -> Dismiss / Exit to Gallery
+                                onBack()
+                            }
+                            totalVerticalDrag = 0f
+                        },
+                        onDragCancel = { totalVerticalDrag = 0f },
+                        onVerticalDrag = { _, dragAmount ->
+                            totalVerticalDrag += dragAmount
+                        }
+                    )
+                }
             }
     ) {
-        // Vertical Pager (TikTok style)
-        VerticalPager(
-            state = pagerState,
-            key = { page -> uiState.items.getOrNull(page)?.id ?: page },
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            val item = uiState.items.getOrNull(page) ?: return@VerticalPager
-            val isActive = page == pagerState.currentPage
-            if (item.mediaType == MediaType.VIDEO) {
-                VideoPlayerView(
-                    item = item,
-                    isActive = isActive,
-                    playPauseToggleTrigger = if (isActive) playPauseToggleTrigger else 0L,
-                    seekPositionRequest = if (isActive) seekPositionRequest else null,
-                    videoEndAction = videoEndAction,
-                    playbackSpeed = playbackSpeed,
-                    isMuted = isMuted,
-                    onMiddleHold = { viewModel.toggleMoreSheet(true) },
-                    onVideoEnded = {
-                        val nextIdx = pagerState.currentPage + 1
-                        if (nextIdx < uiState.items.size) {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(nextIdx)
+        val renderPage: @Composable (Int) -> Unit = { page ->
+            val item = uiState.items.getOrNull(page)
+            if (item != null) {
+                val isActive = page == pagerState.currentPage
+                if (item.mediaType == MediaType.VIDEO) {
+                    VideoPlayerView(
+                        item = item,
+                        isActive = isActive,
+                        playPauseToggleTrigger = if (isActive) playPauseToggleTrigger else 0L,
+                        seekPositionRequest = if (isActive) seekPositionRequest else null,
+                        videoEndAction = videoEndAction,
+                        playbackSpeed = playbackSpeed,
+                        isMuted = isMuted,
+                        onMiddleHold = { viewModel.toggleMoreSheet(true) },
+                        onVideoEnded = {
+                            val nextIdx = pagerState.currentPage + 1
+                            if (nextIdx < uiState.items.size) {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(nextIdx)
+                                }
+                            } else {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(0)
+                                }
                             }
-                        } else {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(0)
+                        },
+                        onPlayerStateUpdated = { playing, pos, dur ->
+                            if (isActive) {
+                                isVideoPlaying = playing
+                                videoCurrentPosition = pos
+                                videoDuration = dur
                             }
-                        }
-                    },
-                    onPlayerStateUpdated = { playing, pos, dur ->
-                        if (isActive) {
-                            isVideoPlaying = playing
-                            videoCurrentPosition = pos
-                            videoDuration = dur
-                        }
-                    },
-                    onTap = { viewModel.toggleChrome() },
-                    onDoubleTapLike = handleDoubleTapLike
-                )
-            } else {
-                ZoomableImage(
-                    item = item,
-                    onTap = { viewModel.toggleChrome() },
-                    onDoubleTapLike = handleDoubleTapLike,
-                    onLongPress = { viewModel.toggleMoreSheet(true) }
-                )
+                        },
+                        onTap = { viewModel.toggleChrome() },
+                        onDoubleTapLike = handleDoubleTapLike
+                    )
+                } else {
+                    ZoomableImage(
+                        item = item,
+                        onTap = { viewModel.toggleChrome() },
+                        onDoubleTapLike = handleDoubleTapLike,
+                        onLongPress = { viewModel.toggleMoreSheet(true) }
+                    )
+                }
+            }
+        }
+
+        if (isVertical) {
+            // Vertical Pager (TikTok style)
+            VerticalPager(
+                state = pagerState,
+                key = { page -> uiState.items.getOrNull(page)?.id ?: page },
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                renderPage(page)
+            }
+        } else {
+            // Horizontal Pager (Classic Gallery style)
+            HorizontalPager(
+                state = pagerState,
+                key = { page -> uiState.items.getOrNull(page)?.id ?: page },
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                renderPage(page)
             }
         }
 
@@ -493,9 +542,34 @@ fun MediaViewerScreen(
                             }
                         )
 
+                        // 4. Scroll Direction toggle
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Scroll Direction", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (isVertical) "Vertical (TikTok style) 📱" else "Horizontal (Classic Gallery) ↔️",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isVertical) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = {
+                                val nextDir = viewModel.toggleScrollDirection()
+                                feedbackNotice = "Scroll: ${if (nextDir == ViewerScrollDirection.VERTICAL) "Vertical 📱" else "Horizontal ↔️"}"
+                            }
+                        )
+
                         HorizontalDivider()
 
-                        // 4. Start Slideshow
+                        // 5. Start Slideshow
                         DropdownMenuItem(
                             text = { Text("Start Slideshow") },
                             leadingIcon = {
@@ -561,9 +635,9 @@ fun MediaViewerScreen(
             }
         }
 
-        // TikTok-style Vertical Action Column (Lower Right, sits above bottom description area)
+        // TikTok-style Vertical Action Column (Lower Right, visible only in VERTICAL scroll mode)
         AnimatedVisibility(
-            visible = uiState.isChromeVisible && currentItem != null,
+            visible = isVertical && uiState.isChromeVisible && currentItem != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -632,7 +706,7 @@ fun MediaViewerScreen(
                     )
                 }
 
-                // Kebab Menu (More) - Replaced Delete button
+                // Kebab Menu (More)
                 TikTokActionButton(
                     icon = Icons.Default.MoreVert,
                     label = "More",
@@ -642,94 +716,271 @@ fun MediaViewerScreen(
             }
         }
 
-        // Full-width Bottom Container (Progress Bar placed above Description Nav Bar)
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .then(if (!uiState.isChromeVisible) Modifier.navigationBarsPadding() else Modifier)
-        ) {
-            // TikTok Progress / Seek Bar directly above the bottom description bar
-            if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) {
-                val progressFraction = if (isScrubbing) scrubFraction else {
-                    (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
-                }
-                val scrubTimeMs = (progressFraction * videoDuration).toLong().coerceIn(0L, videoDuration)
-
-                TikTokProgressBar(
-                    progressFraction = progressFraction,
-                    scrubTimeMs = scrubTimeMs,
-                    totalDurationMs = videoDuration,
-                    isScrubbing = isScrubbing,
-                    onScrubStart = {
-                        isScrubbing = true
-                        scrubFraction = (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
-                    },
-                    onScrub = { frac ->
-                        scrubFraction = frac.coerceIn(0f, 1f)
-                        seekPositionRequest = (scrubFraction * videoDuration).toLong()
-                    },
-                    onScrubEnd = {
-                        val finalSeek = (scrubFraction * videoDuration).toLong()
-                        seekPositionRequest = finalSeek
-                        isScrubbing = false
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // Full-Width Description Bar with shadow filling entire bottom as nav bar
-            AnimatedVisibility(
-                visible = uiState.isChromeVisible && currentItem != null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxWidth()
+        // Bottom Controls Container (Auto-adapts between Vertical TikTok style and Horizontal Classic Gallery style)
+        if (isVertical) {
+            // VERTICAL MODE: TikTok Progress Bar + Full-width Description Banner
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .then(if (!uiState.isChromeVisible) Modifier.navigationBarsPadding() else Modifier)
             ) {
-                val textShadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.85f),
-                    offset = Offset(2f, 2f),
-                    blurRadius = 6f
-                )
+                // TikTok Progress / Seek Bar directly above the bottom description bar
+                if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) {
+                    val progressFraction = if (isScrubbing) scrubFraction else {
+                        (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
+                    }
+                    val scrubTimeMs = (progressFraction * videoDuration).toLong().coerceIn(0L, videoDuration)
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.65f),
-                                    Color.Black.copy(alpha = 0.85f),
-                                    Color.Black.copy(alpha = 0.95f)
+                    TikTokProgressBar(
+                        progressFraction = progressFraction,
+                        scrubTimeMs = scrubTimeMs,
+                        totalDurationMs = videoDuration,
+                        isScrubbing = isScrubbing,
+                        onScrubStart = {
+                            isScrubbing = true
+                            scrubFraction = (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
+                        },
+                        onScrub = { frac ->
+                            scrubFraction = frac.coerceIn(0f, 1f)
+                            seekPositionRequest = (scrubFraction * videoDuration).toLong()
+                        },
+                        onScrubEnd = {
+                            val finalSeek = (scrubFraction * videoDuration).toLong()
+                            seekPositionRequest = finalSeek
+                            isScrubbing = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Full-Width Description Bar
+                AnimatedVisibility(
+                    visible = uiState.isChromeVisible && currentItem != null && uiState.showDetailsBanner,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val textShadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        offset = Offset(2f, 2f),
+                        blurRadius = 6f
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.65f),
+                                        Color.Black.copy(alpha = 0.85f),
+                                        Color.Black.copy(alpha = 0.95f)
+                                    )
                                 )
                             )
-                        )
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 20.dp, top = 10.dp, bottom = 12.dp)
-                ) {
-                    Column {
-                        currentItem?.let { item ->
+                            .navigationBarsPadding()
+                            .padding(start = 16.dp, end = 20.dp, top = 10.dp, bottom = 12.dp)
+                    ) {
+                        Column {
+                            currentItem?.let { item ->
+                                Text(
+                                    text = item.displayName,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium.copy(shadow = textShadow),
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${item.bucketName}  •  ${item.formattedSize}",
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Swipe left for details, swipe right to delete",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.labelSmall.copy(shadow = textShadow)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // HORIZONTAL MODE: Samsung One UI Classic Docked Bottom Action Bar
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                // If video: video seek bar + Play/Pause/Mute controls directly above the bottom action bar
+                if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) {
+                    val progressFraction = if (isScrubbing) scrubFraction else {
+                        (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
+                    }
+                    val scrubTimeMs = (progressFraction * videoDuration).toLong().coerceIn(0L, videoDuration)
+
+                    AnimatedVisibility(
+                        visible = uiState.isChromeVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                )
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { playPauseToggleTrigger = System.currentTimeMillis() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isVideoPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    isMuted = !isMuted
+                                    feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = if (isMuted) "Unmute" else "Mute",
+                                    tint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
                             Text(
-                                text = item.displayName,
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium.copy(shadow = textShadow),
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "${item.bucketName}  •  ${item.formattedSize}",
+                                text = "${formatVideoTime(scrubTimeMs)} / ${formatVideoTime(videoDuration)}",
                                 color = Color.White.copy(alpha = 0.85f),
-                                style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow)
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 6.dp)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Swipe left for details, swipe right to delete",
-                                color = Color.White.copy(alpha = 0.6f),
-                                style = MaterialTheme.typography.labelSmall.copy(shadow = textShadow)
+
+                            Slider(
+                                value = progressFraction,
+                                onValueChange = { frac ->
+                                    isScrubbing = true
+                                    scrubFraction = frac
+                                    seekPositionRequest = (frac * videoDuration).toLong()
+                                },
+                                onValueChangeFinished = {
+                                    val finalSeek = (scrubFraction * videoDuration).toLong()
+                                    seekPositionRequest = finalSeek
+                                    isScrubbing = false
+                                },
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                                ),
+                                modifier = Modifier.weight(1f)
                             )
                         }
+                    }
+                } else if (uiState.showDetailsBanner && currentItem != null) {
+                    // Subtle swipe hint in Horizontal mode
+                    AnimatedVisibility(
+                        visible = uiState.isChromeVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "Swipe up for details  •  Swipe down to close",
+                                color = Color.White.copy(alpha = 0.5f),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+
+                // Docked Bottom Action Bar (Samsung One UI style: Share, Like, Edit, Delete, More)
+                AnimatedVisibility(
+                    visible = uiState.isChromeVisible && currentItem != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.88f))
+                            .navigationBarsPadding()
+                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Share
+                        HorizontalActionItem(
+                            icon = Icons.Default.Share,
+                            label = stringResource(R.string.share),
+                            onClick = { viewModel.shareCurrent() }
+                        )
+
+                        // 2. Favorite / Like
+                        HorizontalActionItem(
+                            icon = if (currentItem?.isFavorite == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            label = if (currentItem?.isFavorite == true) "Liked" else "Favorite",
+                            tint = if (currentItem?.isFavorite == true) FavoriteRed else Color.White,
+                            onClick = {
+                                val newFav = !(currentItem?.isFavorite ?: false)
+                                viewModel.toggleFavorite()
+                                if (newFav) {
+                                    heartAnimTrigger = System.currentTimeMillis()
+                                }
+                            }
+                        )
+
+                        // 3. Edit (Images only)
+                        if (currentItem?.mediaType == MediaType.IMAGE) {
+                            HorizontalActionItem(
+                                icon = Icons.Default.Edit,
+                                label = stringResource(R.string.edit),
+                                onClick = { currentItem?.let { onEditClick(it.id) } }
+                            )
+                        }
+
+                        // 4. Delete
+                        HorizontalActionItem(
+                            icon = Icons.Default.Delete,
+                            label = "Delete",
+                            onClick = { showDeleteConfirmDialog = true }
+                        )
+
+                        // 5. More
+                        HorizontalActionItem(
+                            icon = Icons.Default.MoreVert,
+                            label = "More",
+                            onClick = { viewModel.toggleMoreSheet(true) }
+                        )
                     }
                 }
             }
@@ -1090,6 +1341,38 @@ private fun TikTokActionButton(
             color = Color.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun HorizontalActionItem(
+    icon: ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            color = tint.copy(alpha = if (tint == Color.White) 0.85f else 1f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
         )
     }
 }
