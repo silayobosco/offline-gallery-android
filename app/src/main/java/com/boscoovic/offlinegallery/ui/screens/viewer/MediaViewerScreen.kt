@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
@@ -69,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -77,6 +80,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.boscoovic.offlinegallery.R
@@ -146,6 +150,15 @@ fun MediaViewerScreen(
 
     val currentItem = uiState.items.getOrNull(pagerState.currentPage)
 
+    // Video playback & TikTok scrub state
+    var isVideoPlaying by remember(currentItem?.id) { mutableStateOf(false) }
+    var videoCurrentPosition by remember(currentItem?.id) { mutableLongStateOf(0L) }
+    var videoDuration by remember(currentItem?.id) { mutableLongStateOf(0L) }
+    var playPauseToggleTrigger by remember(currentItem?.id) { mutableLongStateOf(0L) }
+    var seekPositionRequest by remember(currentItem?.id) { mutableStateOf<Long?>(null) }
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubFraction by remember { mutableFloatStateOf(0f) }
+
     // Gesture detection: Swipe Left (< -120f) for Details, Swipe Right (> 120f) to Delete
     var totalHorizontalDrag by remember { mutableFloatStateOf(0f) }
 
@@ -189,6 +202,15 @@ fun MediaViewerScreen(
                 VideoPlayerView(
                     item = item,
                     isActive = isActive,
+                    playPauseToggleTrigger = if (isActive) playPauseToggleTrigger else 0L,
+                    seekPositionRequest = if (isActive) seekPositionRequest else null,
+                    onPlayerStateUpdated = { playing, pos, dur ->
+                        if (isActive) {
+                            isVideoPlaying = playing
+                            videoCurrentPosition = pos
+                            videoDuration = dur
+                        }
+                    },
                     onTap = { viewModel.toggleChrome() },
                     onDoubleTapLike = handleDoubleTapLike
                 )
@@ -354,54 +376,7 @@ fun MediaViewerScreen(
             }
         }
 
-        // Media Info Overlay on Bottom Left with Shadow
-        AnimatedVisibility(
-            visible = uiState.isChromeVisible && currentItem != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .navigationBarsPadding()
-                .padding(start = 16.dp, bottom = 24.dp, end = 90.dp)
-        ) {
-            val textShadow = Shadow(
-                color = Color.Black.copy(alpha = 0.85f),
-                offset = Offset(2f, 2f),
-                blurRadius = 6f
-            )
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Column {
-                    currentItem?.let { item ->
-                        Text(
-                            text = item.displayName,
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium.copy(shadow = textShadow),
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${item.bucketName}  •  ${item.formattedSize}",
-                            color = Color.White.copy(alpha = 0.85f),
-                            style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow)
-                        )
-                        Text(
-                            text = "Swipe left for details, swipe right to delete",
-                            color = Color.White.copy(alpha = 0.6f),
-                            style = MaterialTheme.typography.labelSmall.copy(shadow = textShadow)
-                        )
-                    }
-                }
-            }
-        }
-
-        // TikTok-style Vertical Action Column (Lower Right)
+        // TikTok-style Vertical Action Column (Lower Right, sits above bottom description area)
         AnimatedVisibility(
             visible = uiState.isChromeVisible && currentItem != null,
             enter = fadeIn(),
@@ -409,12 +384,24 @@ fun MediaViewerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 16.dp, bottom = 24.dp)
+                .padding(end = 16.dp, bottom = 100.dp)
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Play / Pause (Only for videos, placed strictly above Like button)
+                if (currentItem?.mediaType == MediaType.VIDEO) {
+                    TikTokActionButton(
+                        icon = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        label = if (isVideoPlaying) "Pause" else "Play",
+                        iconTint = Color.White,
+                        onClick = {
+                            playPauseToggleTrigger = System.currentTimeMillis()
+                        }
+                    )
+                }
+
                 // Like (Favorite)
                 TikTokActionButton(
                     icon = if (currentItem?.isFavorite == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -454,6 +441,99 @@ fun MediaViewerScreen(
                     iconTint = Color.White,
                     onClick = { viewModel.toggleMoreSheet(true) }
                 )
+            }
+        }
+
+        // Full-width Bottom Container (Progress Bar placed above Description Nav Bar)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .then(if (!uiState.isChromeVisible) Modifier.navigationBarsPadding() else Modifier)
+        ) {
+            // TikTok Progress / Seek Bar directly above the bottom description bar
+            if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) {
+                val progressFraction = if (isScrubbing) scrubFraction else {
+                    (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
+                }
+                val scrubTimeMs = (progressFraction * videoDuration).toLong().coerceIn(0L, videoDuration)
+
+                TikTokProgressBar(
+                    progressFraction = progressFraction,
+                    scrubTimeMs = scrubTimeMs,
+                    totalDurationMs = videoDuration,
+                    isScrubbing = isScrubbing,
+                    onScrubStart = {
+                        isScrubbing = true
+                        scrubFraction = (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
+                    },
+                    onScrub = { frac ->
+                        scrubFraction = frac.coerceIn(0f, 1f)
+                        seekPositionRequest = (scrubFraction * videoDuration).toLong()
+                    },
+                    onScrubEnd = {
+                        val finalSeek = (scrubFraction * videoDuration).toLong()
+                        seekPositionRequest = finalSeek
+                        isScrubbing = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Full-Width Description Bar with shadow filling entire bottom as nav bar
+            AnimatedVisibility(
+                visible = uiState.isChromeVisible && currentItem != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val textShadow = Shadow(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    offset = Offset(2f, 2f),
+                    blurRadius = 6f
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.65f),
+                                    Color.Black.copy(alpha = 0.85f),
+                                    Color.Black.copy(alpha = 0.95f)
+                                )
+                            )
+                        )
+                        .navigationBarsPadding()
+                        .padding(start = 16.dp, end = 20.dp, top = 10.dp, bottom = 12.dp)
+                ) {
+                    Column {
+                        currentItem?.let { item ->
+                            Text(
+                                text = item.displayName,
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium.copy(shadow = textShadow),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${item.bucketName}  •  ${item.formattedSize}",
+                                color = Color.White.copy(alpha = 0.85f),
+                                style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Swipe left for details, swipe right to delete",
+                                color = Color.White.copy(alpha = 0.6f),
+                                style = MaterialTheme.typography.labelSmall.copy(shadow = textShadow)
+                            )
+                        }
+                    }
+                }
             }
         }
 

@@ -6,13 +6,10 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -20,18 +17,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,7 +36,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -84,6 +77,9 @@ import kotlin.math.roundToInt
 fun VideoPlayerView(
     item: MediaItem,
     isActive: Boolean,
+    playPauseToggleTrigger: Long,
+    seekPositionRequest: Long?,
+    onPlayerStateUpdated: (isPlaying: Boolean, currentPositionMs: Long, durationMs: Long) -> Unit,
     onTap: () -> Unit,
     onDoubleTapLike: () -> Unit,
     modifier: Modifier = Modifier
@@ -98,11 +94,7 @@ fun VideoPlayerView(
     // TikTok Speed controls: 2x Speed & Slide-down-to-Lock
     var isSpeedUpActive by remember { mutableStateOf(false) }
     var isSpeedLocked by remember { mutableStateOf(false) }
-    var slideDownProgress by remember { mutableFloatStateOf(0f) } // 0f to 1f toward lock threshold
-
-    // Scrub / Seek Bar state
-    var isScrubbing by remember { mutableStateOf(false) }
-    var scrubFraction by remember { mutableFloatStateOf(0f) }
+    var slideDownProgress by remember { mutableFloatStateOf(0f) }
 
     val exoPlayer = remember(item.uri) {
         ExoPlayer.Builder(context).build().apply {
@@ -121,18 +113,51 @@ fun VideoPlayerView(
         } else {
             exoPlayer.playWhenReady = false
             exoPlayer.pause()
-            // Reset speed if page switches
             isSpeedUpActive = false
             isSpeedLocked = false
             exoPlayer.setPlaybackSpeed(1.0f)
         }
+        onPlayerStateUpdated(
+            exoPlayer.isPlaying,
+            exoPlayer.currentPosition.coerceAtLeast(0L),
+            exoPlayer.duration.coerceAtLeast(0L)
+        )
     }
 
-    // Periodic position updater for smooth TikTok scrub bar (10 fps)
-    LaunchedEffect(isActive, isPlaying, isScrubbing) {
-        while (isActive && !isScrubbing) {
+    // Handle Play / Pause toggle triggered strictly from the right action button
+    LaunchedEffect(playPauseToggleTrigger) {
+        if (playPauseToggleTrigger > 0L && isActive) {
+            if (exoPlayer.isPlaying) {
+                exoPlayer.pause()
+            } else {
+                exoPlayer.play()
+            }
+            onPlayerStateUpdated(
+                exoPlayer.isPlaying,
+                exoPlayer.currentPosition.coerceAtLeast(0L),
+                exoPlayer.duration.coerceAtLeast(0L)
+            )
+        }
+    }
+
+    // Handle Seek position request triggered from the scrub bar
+    LaunchedEffect(seekPositionRequest) {
+        seekPositionRequest?.let { targetMs ->
+            exoPlayer.seekTo(targetMs)
+            onPlayerStateUpdated(
+                exoPlayer.isPlaying,
+                exoPlayer.currentPosition.coerceAtLeast(0L),
+                exoPlayer.duration.coerceAtLeast(0L)
+            )
+        }
+    }
+
+    // Periodic position updates to parent screen (10 fps)
+    LaunchedEffect(isActive, isPlaying) {
+        while (isActive) {
             currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
             duration = exoPlayer.duration.coerceAtLeast(0L)
+            onPlayerStateUpdated(exoPlayer.isPlaying, currentPosition, duration)
             delay(100L)
         }
     }
@@ -142,10 +167,20 @@ fun VideoPlayerView(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                onPlayerStateUpdated(
+                    playing,
+                    exoPlayer.currentPosition.coerceAtLeast(0L),
+                    exoPlayer.duration.coerceAtLeast(0L)
+                )
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     duration = exoPlayer.duration.coerceAtLeast(0L)
+                    onPlayerStateUpdated(
+                        exoPlayer.isPlaying,
+                        exoPlayer.currentPosition.coerceAtLeast(0L),
+                        duration
+                    )
                 }
             }
         }
@@ -181,12 +216,15 @@ fun VideoPlayerView(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Video Viewport
+        // Video Viewport (PlayerView touch events disabled so Compose captures all touches reliably)
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    isClickable = false
+                    isFocusable = false
+                    setOnTouchListener { _, _ -> false }
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -196,38 +234,13 @@ fun VideoPlayerView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Main Center Tap Area (toggles Play/Pause, Double-Tap for like, or resets locked speed)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(isSpeedLocked, isPlaying) {
-                    detectTapGestures(
-                        onTap = {
-                            if (isSpeedLocked) {
-                                // Unlock speed back to 1x
-                                isSpeedLocked = false
-                                isSpeedUpActive = false
-                                exoPlayer.setPlaybackSpeed(1.0f)
-                            } else {
-                                if (isPlaying) {
-                                    exoPlayer.pause()
-                                } else {
-                                    exoPlayer.play()
-                                }
-                                onTap()
-                            }
-                        },
-                        onDoubleTap = { onDoubleTapLike() }
-                    )
-                }
-        )
-
-        // Left Edge Strip (TikTok 2x Speed on Long-Press & Slide down to Lock)
-        EdgeSpeedGestureDetector(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(80.dp)
-                .align(Alignment.CenterStart),
+        // Unified TikTok Gesture Surface:
+        // - Hold (>200ms): 2x Speed (intercepts in PointerEventPass.Initial with consume() so VerticalPager cannot steal gesture)
+        // - Slide down while holding: locks 2x speed
+        // - Quick tap: toggles UI chrome (or resets locked speed if active) - DOES NOT toggle play/pause!
+        // - Double tap: like heart animation
+        VideoGestureSurface(
+            isSpeedLocked = isSpeedLocked,
             onSpeedStart = {
                 if (!isSpeedLocked) {
                     isSpeedUpActive = true
@@ -248,36 +261,18 @@ fun VideoPlayerView(
                     exoPlayer.setPlaybackSpeed(1.0f)
                 }
                 slideDownProgress = 0f
-            }
-        )
-
-        // Right Edge Strip (TikTok 2x Speed on Long-Press & Slide down to Lock)
-        EdgeSpeedGestureDetector(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(80.dp)
-                .align(Alignment.CenterEnd),
-            onSpeedStart = {
-                if (!isSpeedLocked) {
-                    isSpeedUpActive = true
-                    exoPlayer.setPlaybackSpeed(2.0f)
-                }
             },
-            onSlideProgress = { progress ->
-                slideDownProgress = progress
-            },
-            onLockTriggered = {
-                isSpeedLocked = true
-                isSpeedUpActive = true
-                exoPlayer.setPlaybackSpeed(2.0f)
-            },
-            onSpeedEnd = {
-                if (!isSpeedLocked) {
+            onTap = {
+                if (isSpeedLocked) {
+                    isSpeedLocked = false
                     isSpeedUpActive = false
                     exoPlayer.setPlaybackSpeed(1.0f)
+                } else {
+                    onTap()
                 }
-                slideDownProgress = 0f
-            }
+            },
+            onDoubleTap = onDoubleTapLike,
+            modifier = Modifier.fillMaxSize()
         )
 
         // TikTok Floating Speed Pill (Top Center)
@@ -294,7 +289,7 @@ fun VideoPlayerView(
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color.Black.copy(alpha = 0.70f))
                     .clickable {
-                        // Tap to reset speed
+                        // Tap pill to reset speed
                         isSpeedLocked = false
                         isSpeedUpActive = false
                         exoPlayer.setPlaybackSpeed(1.0f)
@@ -350,116 +345,94 @@ fun VideoPlayerView(
                 }
             }
         }
-
-        // TikTok Center Play/Pause Button
-        AnimatedVisibility(
-            visible = !isPlaying && isActive && !isScrubbing,
-            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.75f),
-            exit = fadeOut(tween(200)) + scaleOut(targetScale = 1.15f),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(76.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .clickable { exoPlayer.play() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(46.dp)
-                )
-            }
-        }
-
-        // TikTok Seek / Progress Bar (Bottom)
-        if (duration > 0L) {
-            val progressFraction = if (isScrubbing) scrubFraction else {
-                (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-            }
-            val scrubTimeMs = (progressFraction * duration).toLong().coerceIn(0L, duration)
-
-            TikTokProgressBar(
-                progressFraction = progressFraction,
-                scrubTimeMs = scrubTimeMs,
-                totalDurationMs = duration,
-                isScrubbing = isScrubbing,
-                onScrubStart = {
-                    isScrubbing = true
-                    scrubFraction = (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                },
-                onScrub = { frac ->
-                    scrubFraction = frac.coerceIn(0f, 1f)
-                    val seekTarget = (scrubFraction * duration).toLong()
-                    exoPlayer.seekTo(seekTarget)
-                },
-                onScrubEnd = {
-                    val finalSeek = (scrubFraction * duration).toLong()
-                    exoPlayer.seekTo(finalSeek)
-                    exoPlayer.play()
-                    isScrubbing = false
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 2.dp)
-            )
-        }
     }
 }
 
 /**
- * TikTok edge gesture detector:
- * - Detects long press (> 280ms) on edge strips to activate 2x playback speed.
- * - Detects slide-down while holding to lock 2x speed.
+ * TikTok Gesture Surface:
+ * - Detects hold (>200ms) with minimal movement to activate 2x playback speed.
+ *   Uses PointerEventPass.Initial and calls pointer.consume() to prevent VerticalPager from stealing the touch.
+ * - Detects vertical downward slide during hold to lock 2x speed.
+ * - Detects single tap (toggles UI chrome or resets locked speed; does NOT play/pause).
+ * - Detects double tap (triggers like animation).
+ * - Lets vertical/horizontal swipes pass through unconsumed if rapid movement occurs before 200ms.
  */
 @Composable
-private fun EdgeSpeedGestureDetector(
-    modifier: Modifier = Modifier,
+private fun VideoGestureSurface(
+    isSpeedLocked: Boolean,
     onSpeedStart: () -> Unit,
     onSlideProgress: (Float) -> Unit,
     onLockTriggered: () -> Unit,
-    onSpeedEnd: () -> Unit
+    onSpeedEnd: () -> Unit,
+    onTap: () -> Unit,
+    onDoubleTap: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    var lastTapTime by remember { mutableLongStateOf(0L) }
+
     Box(
-        modifier = modifier.pointerInput(Unit) {
+        modifier = modifier.pointerInput(isSpeedLocked) {
             awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
+                val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                 val downTime = System.currentTimeMillis()
+                val startX = down.position.x
                 val startY = down.position.y
+                val pointerId = down.id
                 var isSpeeding = false
                 var isLocked = false
-                val pointerId = down.id
+                var cancelled = false
 
                 while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Main)
+                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                     val pointer = event.changes.firstOrNull { it.id == pointerId } ?: break
 
                     if (!pointer.pressed) {
+                        // Pointer released
+                        val elapsed = System.currentTimeMillis() - downTime
+                        val dx = pointer.position.x - startX
+                        val dy = pointer.position.y - startY
+                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                        if (!isSpeeding && !cancelled && elapsed < 250L && dist < 30f) {
+                            pointer.consume()
+                            val now = System.currentTimeMillis()
+                            if (now - lastTapTime < 320L) {
+                                onDoubleTap()
+                                lastTapTime = 0L
+                            } else {
+                                lastTapTime = now
+                                onTap()
+                            }
+                        }
                         break
                     }
 
                     val elapsed = System.currentTimeMillis() - downTime
-                    val deltaY = pointer.position.y - startY
+                    val dx = pointer.position.x - startX
+                    val dy = pointer.position.y - startY
+                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
 
                     if (!isSpeeding) {
-                        // Long press threshold ~280ms without drifting upward
-                        if (elapsed >= 280L && deltaY >= -20f) {
+                        // Rapid movement before 200ms means intentional swipe (page scroll or action swipe)
+                        if (dist > 35f && elapsed < 200L) {
+                            cancelled = true
+                            break
+                        }
+
+                        // Hold threshold reached: start 2x speed!
+                        if (elapsed >= 200L && !cancelled) {
                             isSpeeding = true
+                            pointer.consume()
                             onSpeedStart()
                         }
                     } else {
-                        // Speed is active: track downward drag to lock threshold (100px)
+                        // Consume all events in Initial pass so parent VerticalPager cannot intercept
                         pointer.consume()
-                        val lockThresholdPx = 100f
-                        val progress = (deltaY / lockThresholdPx).coerceIn(0f, 1f)
+                        val lockThresholdPx = 120f
+                        val progress = (dy / lockThresholdPx).coerceIn(0f, 1f)
                         onSlideProgress(progress)
 
-                        if (deltaY >= lockThresholdPx && !isLocked) {
+                        if (dy >= lockThresholdPx && !isLocked) {
                             isLocked = true
                             onLockTriggered()
                         }
@@ -480,7 +453,7 @@ private fun EdgeSpeedGestureDetector(
  * - Scrubbing: expands to 6dp height, larger thumb, with live time pill floating above.
  */
 @Composable
-private fun TikTokProgressBar(
+internal fun TikTokProgressBar(
     progressFraction: Float,
     scrubTimeMs: Long,
     totalDurationMs: Long,
@@ -504,7 +477,7 @@ private fun TikTokProgressBar(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (isScrubbing) 44.dp else 24.dp)
+            .height(if (isScrubbing) 44.dp else 20.dp)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset ->
@@ -577,7 +550,7 @@ private fun TikTokProgressBar(
     }
 }
 
-private fun formatVideoTime(ms: Long): String {
+internal fun formatVideoTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0L)
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
