@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -343,6 +344,34 @@ fun MediaViewerScreen(
                         alpha = heartAlpha.value
                     )
             )
+        }
+
+        // Center Play/Pause floating button for videos in Horizontal mode (Google Photos style)
+        if (!isVertical && currentItem?.mediaType == MediaType.VIDEO) {
+            AnimatedVisibility(
+                visible = uiState.isChromeVisible,
+                enter = fadeIn(tween(150)),
+                exit = fadeOut(tween(150)),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(68.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .clickable {
+                            playPauseToggleTrigger = System.currentTimeMillis()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isVideoPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(38.dp)
+                    )
+                }
+            }
         }
 
         // Date/Time formatting for top bar
@@ -830,54 +859,78 @@ fun MediaViewerScreen(
                         exit = fadeOut(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            Color.Black.copy(alpha = 0.85f)
+                                            Color.Black.copy(alpha = 0.65f),
+                                            Color.Black.copy(alpha = 0.88f)
                                         )
                                     )
                                 )
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
                         ) {
-                            IconButton(
-                                onClick = { playPauseToggleTrigger = System.currentTimeMillis() },
-                                modifier = Modifier.size(36.dp)
+                            // Row above the scrubber bar: Play Time on left, Mute on right (Google Photos style)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isVideoPlaying) "Pause" else "Play",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    isMuted = !isMuted
-                                    feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = if (isMuted) "Unmute" else "Mute",
-                                    tint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                // Left: Play Time Counter with quick Play/Pause toggle
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (isVideoPlaying) "Pause" else "Play",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clickable {
+                                                playPauseToggleTrigger = System.currentTimeMillis()
+                                            }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${formatVideoTime(scrubTimeMs)} / ${formatVideoTime(videoDuration)}",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+
+                                // Right: Mute / Unmute Button (Google Photos style)
+                                IconButton(
+                                    onClick = {
+                                        isMuted = !isMuted
+                                        feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                ) {
+                                    Icon(
+                                        imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = if (isMuted) "Unmute" else "Mute",
+                                        tint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
 
-                            Text(
-                                text = "${formatVideoTime(scrubTimeMs)} / ${formatVideoTime(videoDuration)}",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 6.dp)
-                            )
+                            Spacer(modifier = Modifier.height(2.dp))
 
+                            // Scrubber / Seek Bar spanning full width
                             Slider(
                                 value = progressFraction,
                                 onValueChange = { frac ->
@@ -893,9 +946,11 @@ fun MediaViewerScreen(
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.White,
                                     activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.35f)
                                 ),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(28.dp)
                             )
                         }
                     }
