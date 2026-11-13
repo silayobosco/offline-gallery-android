@@ -723,19 +723,6 @@ fun MediaViewerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Mute / Unmute (Only for videos)
-                if (currentItem?.mediaType == MediaType.VIDEO) {
-                    TikTokActionButton(
-                        icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        label = if (isMuted) "Unmute" else "Mute",
-                        iconTint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
-                        onClick = {
-                            isMuted = !isMuted
-                            feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
-                        }
-                    )
-                }
-
                 // Play / Pause (Only for videos)
                 if (currentItem?.mediaType == MediaType.VIDEO) {
                     TikTokActionButton(
