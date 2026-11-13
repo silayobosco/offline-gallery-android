@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -11,12 +12,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,7 +31,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -101,13 +107,17 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.boscoovic.offlinegallery.R
+import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
 import kotlinx.coroutines.delay
@@ -977,6 +987,30 @@ fun MediaViewerScreen(
                     }
                 }
 
+                // Mini Thumbnail Filmstrip (Horizontal mode only, synced with pagerState)
+                if (uiState.items.size > 1) {
+                    AnimatedVisibility(
+                        visible = uiState.isChromeVisible,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        HorizontalThumbnailFilmstrip(
+                            items = uiState.items,
+                            currentPage = pagerState.currentPage,
+                            onSelectPage = { targetIndex ->
+                                coroutineScope.launch {
+                                    if (kotlin.math.abs(targetIndex - pagerState.currentPage) <= 4) {
+                                        pagerState.animateScrollToPage(targetIndex)
+                                    } else {
+                                        pagerState.scrollToPage(targetIndex)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+
                 // Docked Bottom Action Bar (Samsung One UI style: Share, Like, Edit, Delete, More)
                 AnimatedVisibility(
                     visible = uiState.isChromeVisible && currentItem != null,
@@ -1431,3 +1465,83 @@ private fun HorizontalActionItem(
         )
     }
 }
+
+@Composable
+private fun HorizontalThumbnailFilmstrip(
+    items: List<MediaItem>,
+    currentPage: Int,
+    onSelectPage: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+    val context = LocalContext.current
+
+    LaunchedEffect(currentPage) {
+        if (currentPage in items.indices) {
+            listState.animateScrollToItem((currentPage - 2).coerceAtLeast(0))
+        }
+    }
+
+    LazyRow(
+        state = listState,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.72f))
+    ) {
+        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+            val isSelected = index == currentPage
+            val thumbWidth by animateDpAsState(
+                targetValue = if (isSelected) 46.dp else 36.dp,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                label = "filmstripWidth"
+            )
+            val thumbHeight by animateDpAsState(
+                targetValue = if (isSelected) 54.dp else 44.dp,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                label = "filmstripHeight"
+            )
+
+            Box(
+                modifier = Modifier
+                    .width(thumbWidth)
+                    .height(thumbHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .then(
+                        if (isSelected) {
+                            Modifier.border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .clickable { onSelectPage(index) }
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(item.uri)
+                        .crossfade(true)
+                        .size(160)
+                        .build(),
+                    contentDescription = item.displayName,
+                    contentScale = ContentScale.Crop,
+                    alpha = if (isSelected) 1f else 0.6f,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                if (item.mediaType == MediaType.VIDEO) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
