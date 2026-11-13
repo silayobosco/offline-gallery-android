@@ -59,6 +59,9 @@ fun GalleryNavGraph(
                 onFavoritesClick = {
                     navController.navigate(Screen.Favorites.route)
                 },
+                onStoriesClick = {
+                    navController.navigate(Screen.Stories.route)
+                },
                 onSecureFolderClick = {
                     navController.navigate(Screen.SecureFolder.route)
                 },
@@ -109,7 +112,8 @@ fun GalleryNavGraph(
                         if (story.items.isNotEmpty()) {
                             navController.navigate(Screen.Viewer.createRoute(story.coverItem.id, "ALL", ""))
                         }
-                    }
+                    },
+                    onBack = { navController.popBackStack() }
                 )
             }
 
@@ -199,9 +203,19 @@ fun GalleryNavGraph(
             }
 
             // Slideshow
-            composable(Screen.Slideshow.route) {
+            composable(
+                route = Screen.Slideshow.route,
+                arguments = listOf(
+                    navArgument("contextType") { type = NavType.StringType; defaultValue = "ALL" },
+                    navArgument("contextArg") { type = NavType.StringType; defaultValue = "" }
+                )
+            ) { backStackEntry ->
+                val contextType = backStackEntry.arguments?.getString("contextType") ?: "ALL"
+                val contextArg = java.net.URLDecoder.decode(backStackEntry.arguments?.getString("contextArg") ?: "", "UTF-8")
                 SlideshowScreen(
                     repository = repository,
+                    contextType = contextType,
+                    contextArg = contextArg,
                     onBack = { navController.popBackStack() }
                 )
             }

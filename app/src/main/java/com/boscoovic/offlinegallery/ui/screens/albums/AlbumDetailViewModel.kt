@@ -7,7 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.data.model.MediaSortOrder
 import com.boscoovic.offlinegallery.data.model.MediaType
+import com.boscoovic.offlinegallery.data.model.sortedWithOrder
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,6 +28,7 @@ data class AlbumDetailUiState(
     val isCustom: Boolean = false,
     val items: List<MediaItem> = emptyList(),
     val allAlbums: List<Album> = emptyList(),
+    val sortOrder: MediaSortOrder = MediaSortOrder.DATE_DESC,
     val isSidebarVisible: Boolean = true,
     val isSelectionMode: Boolean = false,
     val selectedItemIds: Set<Long> = emptySet(),
@@ -58,6 +61,7 @@ class AlbumDetailViewModel @Inject constructor(
     private val _isCurrentCustom = MutableStateFlow(initialIsCustom)
     private val _isSidebarVisible = MutableStateFlow(true)
     private val _selectedItemIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val _sortOrder = MutableStateFlow(MediaSortOrder.DATE_DESC)
 
     val uiState: StateFlow<AlbumDetailUiState> = combine(
         _currentAlbumId,
@@ -70,15 +74,17 @@ class AlbumDetailViewModel @Inject constructor(
         combine(
             repository.getAlbumMedia(tuple.v1, tuple.v3),
             repository.getAlbums(),
-            _selectedItemIds
-        ) { mediaList, albums, selectedIds ->
+            _selectedItemIds,
+            _sortOrder
+        ) { mediaList, albums, selectedIds, sortOrder ->
             AlbumDetailUiState(
                 albumId = tuple.v1,
                 albumName = tuple.v2,
                 isCustom = tuple.v3,
                 isSidebarVisible = tuple.v4,
-                items = mediaList,
+                items = mediaList.sortedWithOrder(sortOrder),
                 allAlbums = albums,
+                sortOrder = sortOrder,
                 isSelectionMode = selectedIds.isNotEmpty(),
                 selectedItemIds = selectedIds,
                 isLoading = false
@@ -103,6 +109,10 @@ class AlbumDetailViewModel @Inject constructor(
 
     fun toggleSidebar(visible: Boolean? = null) {
         _isSidebarVisible.value = visible ?: !_isSidebarVisible.value
+    }
+
+    fun setSortOrder(order: MediaSortOrder) {
+        _sortOrder.value = order
     }
 
     fun toggleItemSelection(mediaId: Long) {

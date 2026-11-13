@@ -46,6 +46,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -101,6 +104,7 @@ import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.data.model.MediaSortOrder
 import com.boscoovic.offlinegallery.ui.components.FastScrollScrubber
 import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
 import com.boscoovic.offlinegallery.ui.components.MoveToAlbumDialog
@@ -125,6 +129,7 @@ fun MainGalleryScreen(
     onMediaClick: (MediaItem) -> Unit,
     onAlbumClick: (Album) -> Unit,
     onFavoritesClick: () -> Unit,
+    onStoriesClick: () -> Unit = {},
     onSecureFolderClick: () -> Unit,
     onRecycleBinClick: () -> Unit,
     onSearchClick: () -> Unit,
@@ -411,10 +416,35 @@ fun MainGalleryScreen(
                         )
                     }
 
+                    var showSortDialog by remember { mutableStateOf(false) }
+
                     DropdownMenu(
                         expanded = showMoreMenu,
                         onDismissRequest = { showMoreMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Sort by") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                            trailingIcon = {
+                                Text(
+                                    text = picturesState.sortOrder.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = {
+                                showMoreMenu = false
+                                showSortDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Stories") },
+                            leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMoreMenu = false
+                                onStoriesClick()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Favorites") },
                             leadingIcon = { Icon(Icons.Default.Favorite, contentDescription = null, tint = FavoriteRed) },
@@ -446,6 +476,45 @@ fun MainGalleryScreen(
                             onClick = {
                                 showMoreMenu = false
                                 onSettingsClick()
+                            }
+                        )
+                    }
+
+                    if (showSortDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showSortDialog = false },
+                            title = { Text("Sort Pictures") },
+                            text = {
+                                Column {
+                                    MediaSortOrder.values().forEach { order ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    picturesViewModel.setSortOrder(order)
+                                                    showSortDialog = false
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(order.label, style = MaterialTheme.typography.bodyLarge)
+                                            if (picturesState.sortOrder == order) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showSortDialog = false }) {
+                                    Text("Close")
+                                }
                             }
                         )
                     }
@@ -703,6 +772,7 @@ private fun AlbumsTabContent(
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     onAlbumClick: (Album) -> Unit,
     onFavoritesClick: () -> Unit,
+    onStoriesClick: () -> Unit = {},
     onSecureFolderClick: () -> Unit,
     onRecycleBinClick: () -> Unit
 ) {

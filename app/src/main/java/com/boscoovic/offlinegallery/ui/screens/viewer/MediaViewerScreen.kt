@@ -207,7 +207,7 @@ fun MediaViewerScreen(
     var feedbackNotice by remember { mutableStateOf<String?>(null) }
     var showQueueMenu by remember { mutableStateOf(false) }
     var isMuted by rememberSaveable { mutableStateOf(false) }
-    var showFilmstrip by rememberSaveable { mutableStateOf(true) }
+    val showFilmstrip = uiState.showFilmstrip
 
     LaunchedEffect(feedbackNotice) {
         if (feedbackNotice != null) {
@@ -674,8 +674,8 @@ fun MediaViewerScreen(
                                 )
                             },
                             onClick = {
-                                showFilmstrip = !showFilmstrip
-                                feedbackNotice = if (showFilmstrip) "Thumbnail strip shown" else "Thumbnail strip hidden"
+                                val nextVisible = viewModel.toggleFilmstrip()
+                                feedbackNotice = if (nextVisible) "Thumbnail strip shown" else "Thumbnail strip hidden"
                             }
                         )
 

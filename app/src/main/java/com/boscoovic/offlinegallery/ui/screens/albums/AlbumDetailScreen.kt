@@ -46,8 +46,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewSidebar
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -113,6 +115,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.data.model.MediaSortOrder
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.ui.components.FastScrollScrubber
 import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
@@ -164,6 +167,7 @@ fun AlbumDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showMoveSelectedDialog by remember { mutableStateOf(false) }
+    var showSortDialog by remember { mutableStateOf(false) }
     var renameAlbumName by remember { mutableStateOf("") }
     var gridColumns by remember { mutableIntStateOf(if (uiState.isSidebarVisible) 3 else 4) }
     val dateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
@@ -339,6 +343,23 @@ fun AlbumDetailScreen(
                                 onClick = {
                                     showMenu = false
                                     onSlideshowClick(if (uiState.isCustom) "CUSTOM_ALBUM" else "ALBUM", uiState.albumId.toString())
+                                }
+                            )
+
+                            // Sort by
+                            DropdownMenuItem(
+                                text = { Text("Sort by") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                                trailingIcon = {
+                                    Text(
+                                        text = uiState.sortOrder.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showSortDialog = true
                                 }
                             )
 
@@ -838,6 +859,45 @@ fun AlbumDetailScreen(
                 dismissButton = {
                     TextButton(onClick = { showDeleteDialog = false }) {
                         Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showSortDialog) {
+            AlertDialog(
+                onDismissRequest = { showSortDialog = false },
+                title = { Text("Sort Folder") },
+                text = {
+                    Column {
+                        MediaSortOrder.values().forEach { order ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        viewModel.setSortOrder(order)
+                                        showSortDialog = false
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(order.label, style = MaterialTheme.typography.bodyLarge)
+                                if (uiState.sortOrder == order) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSortDialog = false }) {
+                        Text("Close")
                     }
                 }
             )

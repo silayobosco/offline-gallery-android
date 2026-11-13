@@ -78,6 +78,9 @@ class SettingsManager @Inject constructor(
     private val _hasSeenViewerOnboarding = MutableStateFlow(prefs.getBoolean(KEY_VIEWER_ONBOARDING_SEEN, false))
     val hasSeenViewerOnboarding: StateFlow<Boolean> = _hasSeenViewerOnboarding.asStateFlow()
 
+    private val _showFilmstrip = MutableStateFlow(prefs.getBoolean(KEY_SHOW_FILMSTRIP, true))
+    val showFilmstrip: StateFlow<Boolean> = _showFilmstrip.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
         _themeMode.value = mode
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
@@ -119,6 +122,16 @@ class SettingsManager @Inject constructor(
         prefs.edit().putBoolean(KEY_VIEWER_ONBOARDING_SEEN, true).apply()
     }
 
+    fun resetViewerOnboarding() {
+        _hasSeenViewerOnboarding.value = false
+        prefs.edit().putBoolean(KEY_VIEWER_ONBOARDING_SEEN, false).apply()
+    }
+
+    fun setShowFilmstrip(enabled: Boolean) {
+        _showFilmstrip.value = enabled
+        prefs.edit().putBoolean(KEY_SHOW_FILMSTRIP, enabled).apply()
+    }
+
     suspend fun getCacheSizeBytes(): Long = withContext(Dispatchers.IO) {
         var size = 0L
         fun calc(file: File) {
@@ -153,6 +166,7 @@ class SettingsManager @Inject constructor(
         private const val KEY_SHOW_DETAILS_BANNER = "pref_show_details_banner"
         private const val KEY_SCROLL_DIRECTION = "pref_viewer_scroll_direction"
         private const val KEY_VIEWER_ONBOARDING_SEEN = "pref_viewer_onboarding_seen"
+        private const val KEY_SHOW_FILMSTRIP = "pref_show_filmstrip"
     }
 }
 

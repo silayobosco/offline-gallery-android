@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,23 +38,30 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.boscoovic.offlinegallery.R
-import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.ui.components.OneUiCollapsibleHeader
 
 @Composable
 fun StoriesScreen(
     viewModel: StoriesViewModel,
     onStoryClick: (StoryCollection) -> Unit,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 20
+        }
+    }
 
-    Column(modifier = modifier.fillMaxSize().statusBarsPadding()) {
-        Text(
-            text = stringResource(R.string.stories),
-            style = MaterialTheme.typography.displayLarge.copy(fontSize = 28.sp),
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+    Column(modifier = modifier.fillMaxSize()) {
+        OneUiCollapsibleHeader(
+            title = stringResource(R.string.stories),
+            subtitle = "${uiState.stories.size} curated story(s)",
+            isScrolled = isScrolled,
+            onBack = onBack
         )
 
         if (uiState.isLoading) {
@@ -68,6 +78,7 @@ fun StoriesScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize()

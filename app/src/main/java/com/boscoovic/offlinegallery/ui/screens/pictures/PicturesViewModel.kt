@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.data.model.MediaSortOrder
+import com.boscoovic.offlinegallery.data.model.sortedWithOrder
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import com.boscoovic.offlinegallery.data.settings.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +31,7 @@ data class DateGroup(
 
 data class PicturesUiState(
     val filter: MediaFilter = MediaFilter.ALL,
+    val sortOrder: MediaSortOrder = MediaSortOrder.DATE_DESC,
     val dateGroups: List<DateGroup> = emptyList(),
     val totalCount: Int = 0,
     val columnCount: Int = 3,
@@ -45,21 +48,24 @@ class PicturesViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _filter = MutableStateFlow(MediaFilter.ALL)
+    private val _sortOrder = MutableStateFlow(MediaSortOrder.DATE_DESC)
     private val _columnCount = MutableStateFlow(settingsManager.defaultGridColumns.value)
     private val _selectedItemIds = MutableStateFlow<Set<Long>>(emptySet())
 
-    val uiState: StateFlow<PicturesUiState> = _filter.flatMapLatest { filter ->
-        repository.getAllMedia(filter)
-    }.combine(_filter) { mediaList, filter ->
-        Pair(mediaList, filter)
-    }.combine(_columnCount) { (mediaList, filter), columns ->
-        Triple(mediaList, filter, columns)
-    }.combine(_selectedItemIds) { (mediaList, filter, columns), selectedIds ->
-        val dateGroups = groupMediaByDay(mediaList)
+    val uiState: StateFlow<PicturesUiState> = combine(
+        _filter.flatMapLatest { filter -> repository.getAllMedia(filter) },
+        _filter,
+        _sortOrder,
+        _columnCount,
+        _selectedItemIds
+    ) { mediaList, filter, sortOrder, columns, selectedIds ->
+        val sortedList = mediaList.sortedWithOrder(sortOrder)
+        val dateGroups = groupMediaByDay(sortedList, sortOrder)
         PicturesUiState(
             filter = filter,
+            sortOrder = sortOrder,
             dateGroups = dateGroups,
-            totalCount = mediaList.size,
+            totalCount = sortedList.size,
             columnCount = columns,
             isSelectionMode = selectedIds.isNotEmpty(),
             selectedItemIds = selectedIds,
@@ -73,6 +79,10 @@ class PicturesViewModel @Inject constructor(
 
     fun setFilter(filter: MediaFilter) {
         _filter.value = filter
+    }
+
+    fun setSortOrder(order: MediaSortOrder) {
+        _sortOrder.value = order
     }
 
     fun setColumnCount(columns: Int) {
@@ -193,7 +203,7 @@ class PicturesViewModel @Inject constructor(
         context.startActivity(chooser)
     }
 
-    private fun groupMediaByDay(mediaList: List<MediaItem>): List<DateGroup> {
+    private fun groupMediaByDay(mediaList: List<MediaItem>, sortOrder: MediaSortOrder): List<DateGroup> {
         val groups = mutableMapOf<Long, MutableList<MediaItem>>()
         val cal = Calendar.getInstance()
 
@@ -209,9 +219,11 @@ class PicturesViewModel @Inject constructor(
             groups.getOrPut(dayStart) { mutableListOf() }.add(item)
         }
 
-        return groups.entries
-            .sortedByDescending { it.key }
-            .map { DateGroup(dateMillis = it.key, items = it.value) }
+        val entries = when (sortOrder) {
+            MediaSortOrder.DATE_ASC -> groups.entries.sortedBy { it.key }
+            else -> groups.entries.sortedByDescending { it.key }
+        }
+        return entries.map { DateGroup(dateMillis = it.key, items = it.value) }
     }
 }
 

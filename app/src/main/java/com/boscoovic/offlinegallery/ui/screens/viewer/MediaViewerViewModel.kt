@@ -58,6 +58,7 @@ data class MediaViewerUiState(
     val allAlbums: List<Album> = emptyList(),
     val viewerScrollDirection: ViewerScrollDirection = ViewerScrollDirection.VERTICAL,
     val showDetailsBanner: Boolean = true,
+    val showFilmstrip: Boolean = true,
     val hasSeenViewerOnboarding: Boolean = true
 )
 
@@ -96,6 +97,7 @@ class MediaViewerViewModel @Inject constructor(
         _allAlbums,
         settingsManager.viewerScrollDirection,
         settingsManager.showDetailsBanner,
+        settingsManager.showFilmstrip,
         settingsManager.hasSeenViewerOnboarding
     ) { args: Array<Any?> ->
         val currentShuffleMode = args[5] as ShuffleMode
@@ -112,7 +114,8 @@ class MediaViewerViewModel @Inject constructor(
             allAlbums = args[7] as List<Album>,
             viewerScrollDirection = args[8] as ViewerScrollDirection,
             showDetailsBanner = args[9] as Boolean,
-            hasSeenViewerOnboarding = args[10] as Boolean
+            showFilmstrip = args[10] as Boolean,
+            hasSeenViewerOnboarding = args[11] as Boolean
         )
     }.stateIn(
         scope = viewModelScope,
@@ -553,6 +556,12 @@ class MediaViewerViewModel @Inject constructor(
 
     fun markOnboardingSeen() {
         settingsManager.markViewerOnboardingSeen()
+    }
+
+    fun toggleFilmstrip(): Boolean {
+        val next = !settingsManager.showFilmstrip.value
+        settingsManager.setShowFilmstrip(next)
+        return next
     }
 
     private fun loadExif(item: MediaItem) {

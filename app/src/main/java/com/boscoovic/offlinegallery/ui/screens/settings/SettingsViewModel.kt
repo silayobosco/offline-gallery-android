@@ -25,6 +25,7 @@ data class SettingsUiState(
     val videoEndAction: DefaultVideoEndAction = DefaultVideoEndAction.LOOP,
     val showDetailsBanner: Boolean = true,
     val viewerScrollDirection: ViewerScrollDirection = ViewerScrollDirection.VERTICAL,
+    val showFilmstrip: Boolean = true,
     val trashCount: Int = 0,
     val cacheSizeText: String = "Calculating..."
 )
@@ -45,6 +46,7 @@ class SettingsViewModel @Inject constructor(
         settingsManager.videoEndAction,
         settingsManager.showDetailsBanner,
         settingsManager.viewerScrollDirection,
+        settingsManager.showFilmstrip,
         repository.getTrashItems().map { it.size },
         _cacheSizeText
     ) { args: Array<Any?> ->
@@ -56,8 +58,9 @@ class SettingsViewModel @Inject constructor(
             videoEndAction = args[4] as DefaultVideoEndAction,
             showDetailsBanner = args[5] as Boolean,
             viewerScrollDirection = args[6] as ViewerScrollDirection,
-            trashCount = args[7] as Int,
-            cacheSizeText = args[8] as String
+            showFilmstrip = args[7] as Boolean,
+            trashCount = args[8] as Int,
+            cacheSizeText = args[9] as String
         )
     }.stateIn(
         scope = viewModelScope,
@@ -95,6 +98,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setViewerScrollDirection(direction: ViewerScrollDirection) {
         settingsManager.setViewerScrollDirection(direction)
+    }
+
+    fun setShowFilmstrip(enabled: Boolean) {
+        settingsManager.setShowFilmstrip(enabled)
+    }
+
+    fun resetViewerOnboarding() {
+        settingsManager.resetViewerOnboarding()
     }
 
     fun refreshCacheSize() {

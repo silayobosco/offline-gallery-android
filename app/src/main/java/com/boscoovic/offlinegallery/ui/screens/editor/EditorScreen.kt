@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.CropRotate
@@ -180,14 +182,60 @@ fun EditorScreen(
             val localDensity = LocalDensity.current
             val totalWidthPx = constraints.maxWidth.toFloat()
             val totalHeightPx = constraints.maxHeight.toFloat()
+            var isComparingOriginal by remember { mutableStateOf(false) }
 
-            uiState.previewBitmap?.let { bmp ->
+            val displayedBitmap = if (isComparingOriginal) {
+                uiState.originalBitmap ?: uiState.previewBitmap
+            } else {
+                uiState.previewBitmap
+            }
+
+            displayedBitmap?.let { bmp ->
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "Edited Preview",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Compare Original Pill (hold to preview original unedited image)
+                if (uiState.canUndo) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isComparingOriginal) MaterialTheme.colorScheme.primary
+                                else Color.Black.copy(alpha = 0.65f)
+                            )
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onPress = {
+                                        isComparingOriginal = true
+                                        tryAwaitRelease()
+                                        isComparingOriginal = false
+                                    }
+                                )
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Compare,
+                            contentDescription = "Hold to compare original",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isComparingOriginal) "ORIGINAL" else "Hold to compare",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
 
                 // Interactive Crop Guide when CROP_ROTATE is active
                 if (uiState.currentTool == EditorTool.CROP_ROTATE) {
