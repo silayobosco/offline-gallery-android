@@ -1,4 +1,4 @@
-# Lumina Gallery (Offline Android Gallery)
+# J-Gallery (Offline Android Gallery)
 
 A modern, native, strictly offline Android gallery app inspired by Samsung Gallery and One UI design principles. Built with **Jetpack Compose**, **Room**, **Hilt**, **Media3**, and **MediaStore**.
 
@@ -35,9 +35,9 @@ A modern, native, strictly offline Android gallery app inspired by Samsung Galle
 - **Secure Folder (Hidden Items)**:
   - Hidden photos/videos moved into encrypted app-private storage via AndroidX Security (`EncryptedFile` + AES-256 GCM).
   - Biometric / device credential lock via AndroidX Biometric, `FLAG_SECURE` screenshot & recents protection, automatic re-lock when backgrounded (`ON_STOP`), and long-press multi-select batch restore.
-- **Recycle Bin**:
-  - App-managed trash bin with automatic 30-day retention and daily WorkManager purge worker.
-  - Single and multi-select restore or permanent delete, plus "Empty Bin".
+- **Recycle Bin (System Trash Sync)**:
+  - Connected to **Android System Trash** on Android 11+ (`MediaStore.createTrashRequest` / `MediaStore.createDeleteRequest` & `IS_TRASHED`), keeping local trashed photos and videos in sync with Google Gallery and Google Photos' device trash.
+  - 30-day automatic retention, single and multi-select restore or permanent delete, "Empty Bin", plus app-private trash fallback on Android 10.
 - **Settings & Customization**:
   - Theme (`System`, `Light`, `Dark`), Dynamic Color, Default Grid Columns (`2`–`5 cols`), Viewer Scroll Direction (`Vertical` / `Horizontal`), Filmstrip toggle, Video autoplay & end action, cache size inspection/clearing, and transparent privacy disclosure.
 
