@@ -1,5 +1,6 @@
 package com.boscoovic.offlinegallery.ui.screens.recyclebin
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -68,6 +69,10 @@ fun RecycleBinScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val gridState = rememberLazyGridState()
+
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
     val isScrolled by remember {
         derivedStateOf {
             gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 20

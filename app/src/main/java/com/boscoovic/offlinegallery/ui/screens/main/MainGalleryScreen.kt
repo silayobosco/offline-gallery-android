@@ -1,6 +1,7 @@
 package com.boscoovic.offlinegallery.ui.screens.main
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -132,6 +133,10 @@ fun MainGalleryScreen(
 ) {
     val picturesState by picturesViewModel.uiState.collectAsState()
     val albumsState by albumsViewModel.uiState.collectAsState()
+
+    BackHandler(enabled = picturesState.isSelectionMode) {
+        picturesViewModel.clearSelection()
+    }
 
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()

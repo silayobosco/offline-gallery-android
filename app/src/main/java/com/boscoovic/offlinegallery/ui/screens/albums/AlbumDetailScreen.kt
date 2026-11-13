@@ -1,6 +1,7 @@
 package com.boscoovic.offlinegallery.ui.screens.albums
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -135,6 +136,10 @@ fun AlbumDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val gridState = rememberLazyGridState()
+
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
 
     // Determine whether user has scrolled down into the media grid
     val isScrolled by remember {

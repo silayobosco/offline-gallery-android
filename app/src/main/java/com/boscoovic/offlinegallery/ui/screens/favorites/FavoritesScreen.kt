@@ -1,6 +1,7 @@
 package com.boscoovic.offlinegallery.ui.screens.favorites
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -62,6 +63,10 @@ fun FavoritesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val gridState = rememberLazyGridState()
+
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
     var showMoveDialog by remember { mutableStateOf(false) }
     val dateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
 
