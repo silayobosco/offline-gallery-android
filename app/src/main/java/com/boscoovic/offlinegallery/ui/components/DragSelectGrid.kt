@@ -1,10 +1,10 @@
 package com.boscoovic.offlinegallery.ui.components
 
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import kotlinx.coroutines.delay
@@ -24,8 +25,10 @@ import kotlin.math.min
 
 /**
  * Enables Samsung One UI / Google Photos style drag-to-select on a LazyVerticalGrid.
- * Long-press any media thumbnail and slide your finger across the grid to select or deselect
- * a continuous range of items, with automatic edge scrolling.
+ * Works alongside MediaThumbnail's onClick/onLongClick by observing PointerEventPass.Initial:
+ * - Normal taps and scrolls pass through untouched.
+ * - Holding a thumbnail past longPressTimeoutMillis and sliding your finger selects/deselects
+ *   a continuous range of items with automatic edge scrolling.
  */
 fun Modifier.dragSelectGrid(
     gridState: LazyGridState,
@@ -52,9 +55,8 @@ fun Modifier.dragSelectGrid(
     }
 
     this.pointerInput(gridState, enabled) {
-        var anchorIndex = -1
-        var targetSelect = true
-        var initialSelection: Set<Long> = emptySet()
+        val touchSlop = viewConfiguration.touchSlop
+        val longPressTimeoutMs = viewConfiguration.longPressTimeoutMillis
 
         fun findItemIndexAt(position: Offset, idList: List<Long>): Int {
             val visibleItems = gridState.layoutInfo.visibleItemsInfo
@@ -92,60 +94,77 @@ fun Modifier.dragSelectGrid(
             return updated
         }
 
-        detectDragGesturesAfterLongPress(
-            onDragStart = { startOffset ->
-                val ids = currentOrderedIds
-                val hitIdx = findItemIndexAt(startOffset, ids)
-                if (hitIdx >= 0) {
-                    val hitId = ids[hitIdx]
-                    initialSelection = currentSelectedIds
-                    anchorIndex = hitIdx
-                    targetSelect = !initialSelection.contains(hitId)
-                    isDragging = true
-                    autoScrollSpeed = 0f
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    currentOnSelectionChanged(
-                        applyRange(initialSelection, ids, anchorIndex, anchorIndex, targetSelect)
-                    )
-                }
-            },
-            onDrag = { change, _ ->
-                if (!isDragging || anchorIndex < 0) return@detectDragGesturesAfterLongPress
-                change.consume()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val downPos = down.position
+            val downTime = System.currentTimeMillis()
+            val idsAtDown = currentOrderedIds
+            val anchorIndex = findItemIndexAt(downPos, idsAtDown)
+            if (anchorIndex < 0) return@awaitEachGesture
 
-                val viewportHeight = gridState.layoutInfo.viewportSize.height.toFloat()
-                val edgeThreshold = 110f
-                autoScrollSpeed = when {
-                    change.position.y < edgeThreshold -> {
-                        val factor = ((edgeThreshold - change.position.y) / edgeThreshold).coerceIn(0f, 1f)
-                        -24f * factor
-                    }
-                    change.position.y > viewportHeight - edgeThreshold -> {
-                        val factor = ((change.position.y - (viewportHeight - edgeThreshold)) / edgeThreshold).coerceIn(0f, 1f)
-                        24f * factor
-                    }
-                    else -> 0f
+            val anchorId = idsAtDown[anchorIndex]
+            val initialSelection = currentSelectedIds
+            val targetSelect = !initialSelection.contains(anchorId)
+            var dragSelectActive = false
+            var movedTooEarly = false
+
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                if (!pointer.pressed || event.changes.count { it.pressed } > 1) {
+                    break
                 }
 
-                val ids = currentOrderedIds
-                val hitIdx = findItemIndexAt(change.position, ids)
-                if (hitIdx >= 0) {
-                    currentOnSelectionChanged(
-                        applyRange(initialSelection, ids, anchorIndex, hitIdx, targetSelect)
-                    )
+                val elapsed = System.currentTimeMillis() - downTime
+                val distance = (pointer.position - downPos).getDistance()
+
+                if (!dragSelectActive) {
+                    if (distance > touchSlop && elapsed < longPressTimeoutMs) {
+                        // Normal scroll gesture — let LazyVerticalGrid handle it
+                        movedTooEarly = true
+                        break
+                    }
+                    if (elapsed >= longPressTimeoutMs && distance > touchSlop && !movedTooEarly) {
+                        dragSelectActive = true
+                        isDragging = true
+                        autoScrollSpeed = 0f
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        currentOnSelectionChanged(
+                            applyRange(initialSelection, idsAtDown, anchorIndex, anchorIndex, targetSelect)
+                        )
+                    }
                 }
-            },
-            onDragEnd = {
-                isDragging = false
-                autoScrollSpeed = 0f
-                anchorIndex = -1
-            },
-            onDragCancel = {
-                isDragging = false
-                autoScrollSpeed = 0f
-                anchorIndex = -1
+
+                if (dragSelectActive) {
+                    pointer.consume()
+
+                    val viewportHeight = gridState.layoutInfo.viewportSize.height.toFloat()
+                    val edgeThreshold = 110f
+                    autoScrollSpeed = when {
+                        pointer.position.y < edgeThreshold -> {
+                            val factor = ((edgeThreshold - pointer.position.y) / edgeThreshold).coerceIn(0f, 1f)
+                            -24f * factor
+                        }
+                        pointer.position.y > viewportHeight - edgeThreshold -> {
+                            val factor = ((pointer.position.y - (viewportHeight - edgeThreshold)) / edgeThreshold).coerceIn(0f, 1f)
+                            24f * factor
+                        }
+                        else -> 0f
+                    }
+
+                    val ids = currentOrderedIds
+                    val hitIdx = findItemIndexAt(pointer.position, ids)
+                    if (hitIdx >= 0) {
+                        currentOnSelectionChanged(
+                            applyRange(initialSelection, ids, anchorIndex, hitIdx, targetSelect)
+                        )
+                    }
+                }
             }
-        )
+
+            isDragging = false
+            autoScrollSpeed = 0f
+        }
     }
 }
-

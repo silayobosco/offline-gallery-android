@@ -635,7 +635,9 @@ private fun PicturesTabContent(
                                             onMediaClick(item)
                                         }
                                     },
-                                    onLongClick = null
+                                    onLongClick = {
+                                        viewModel.toggleItemSelection(item.id)
+                                    }
                                 )
                             }
                         }
