@@ -407,12 +407,22 @@ class MediaRepositoryImpl @Inject constructor(
             if (query.isBlank()) list
             else {
                 val q = query.lowercase().trim()
+                val monthYearFmt = java.text.SimpleDateFormat("MMMM yyyy MMM d", java.util.Locale.getDefault())
                 list.filter { item ->
+                    val timeMs = if (item.dateTaken > 0) item.dateTaken else item.dateAdded * 1000L
+                    val dateStr = monthYearFmt.format(java.util.Date(timeMs)).lowercase()
                     item.displayName.lowercase().contains(q) ||
                     item.bucketName.lowercase().contains(q) ||
+                    item.mimeType.lowercase().contains(q) ||
+                    dateStr.contains(q) ||
+                    item.path.lowercase().contains(q) ||
                     ((q == "photo" || q == "photos" || q == "image") && item.mediaType == MediaType.IMAGE) ||
                     ((q == "video" || q == "videos") && item.mediaType == MediaType.VIDEO) ||
-                    ((q == "favorite" || q == "favorites") && item.isFavorite)
+                    ((q == "favorite" || q == "favorites") && item.isFavorite) ||
+                    (q == "gif" && item.mimeType.contains("gif", ignoreCase = true)) ||
+                    (q == "portrait" && item.height > item.width && item.width > 0) ||
+                    (q == "landscape" && item.width > item.height && item.height > 0) ||
+                    (q == "panorama" && item.height > 0 && item.width >= item.height * 2)
                 }
             }
         }.flowOn(Dispatchers.IO)

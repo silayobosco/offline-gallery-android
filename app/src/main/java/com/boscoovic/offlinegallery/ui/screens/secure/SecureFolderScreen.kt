@@ -1,9 +1,15 @@
 package com.boscoovic.offlinegallery.ui.screens.secure
 
+import android.app.Activity
+import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +29,12 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,11 +43,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +61,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.material.icons.filled.PlayArrow
@@ -58,6 +73,7 @@ import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.ui.components.OneUiCollapsibleHeader
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SecureFolderScreen(
     viewModel: SecureFolderViewModel,
@@ -67,11 +83,35 @@ fun SecureFolderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val gridState = rememberLazyGridState()
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val isSelectionMode = selectedIds.isNotEmpty()
     val isScrolled by remember {
         derivedStateOf {
             gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 20
         }
+    }
+
+    // Prevent screenshots & recents thumbnail leakage while in Secure Folder; auto-lock when app goes to background
+    DisposableEffect(context, lifecycleOwner) {
+        val activity = context as? Activity
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                selectedIds = emptySet()
+                viewModel.lock()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    BackHandler(enabled = isSelectionMode) {
+        selectedIds = emptySet()
     }
 
     val promptBiometric = {
@@ -111,14 +151,32 @@ fun SecureFolderScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         OneUiCollapsibleHeader(
-            title = stringResource(R.string.secure_folder),
-            subtitle = if (uiState.isUnlocked) "${uiState.items.size} hidden item(s)" else "Locked",
+            title = if (isSelectionMode) "${selectedIds.size} selected" else stringResource(R.string.secure_folder),
+            subtitle = when {
+                isSelectionMode -> "Tap items to select"
+                uiState.isUnlocked -> "${uiState.items.size} hidden item(s)"
+                else -> "Locked"
+            },
             isScrolled = uiState.isUnlocked && isScrolled,
-            onBack = onBack,
+            onBack = {
+                if (isSelectionMode) selectedIds = emptySet() else onBack()
+            },
             actions = {
                 if (uiState.isUnlocked) {
-                    IconButton(onClick = { viewModel.lock() }) {
-                        Icon(Icons.Default.Lock, contentDescription = "Lock")
+                    if (isSelectionMode) {
+                        IconButton(onClick = {
+                            viewModel.restoreItems(selectedIds)
+                            selectedIds = emptySet()
+                        }) {
+                            Icon(Icons.Default.Restore, contentDescription = "Restore selected")
+                        }
+                        IconButton(onClick = { selectedIds = emptySet() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                        }
+                    } else {
+                        IconButton(onClick = { viewModel.lock() }) {
+                            Icon(Icons.Default.Lock, contentDescription = "Lock")
+                        }
                     }
                 }
             }
@@ -196,11 +254,27 @@ fun SecureFolderScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(uiState.items, key = { it.id }) { item ->
+                        val isSelected = item.id in selectedIds
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(6.dp))
-                                .clickable { onMediaClick(item) }
+                                .then(
+                                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                                    else Modifier
+                                )
+                                .combinedClickable(
+                                    onClick = {
+                                        if (isSelectionMode) {
+                                            selectedIds = if (isSelected) selectedIds - item.id else selectedIds + item.id
+                                        } else {
+                                            onMediaClick(item)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selectedIds = if (isSelected) selectedIds - item.id else selectedIds + item.id
+                                    }
+                                )
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -231,21 +305,33 @@ fun SecureFolderScreen(
                                 }
                             }
 
-                            // Restore button
-                            IconButton(
-                                onClick = { viewModel.restoreItem(item.id) },
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(4.dp)
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-                            ) {
+                            if (isSelectionMode) {
                                 Icon(
-                                    imageVector = Icons.Default.Restore,
-                                    contentDescription = "Restore to gallery",
-                                    modifier = Modifier.size(16.dp)
+                                    imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(6.dp)
+                                        .size(22.dp)
                                 )
+                            } else {
+                                // Restore button
+                                IconButton(
+                                    onClick = { viewModel.restoreItem(item.id) },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(4.dp)
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Restore,
+                                        contentDescription = "Restore to gallery",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }

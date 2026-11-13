@@ -110,7 +110,8 @@ fun GalleryNavGraph(
                     viewModel = viewModel,
                     onStoryClick = { story ->
                         if (story.items.isNotEmpty()) {
-                            navController.navigate(Screen.Viewer.createRoute(story.coverItem.id, "ALL", ""))
+                            val idsArg = story.items.take(100).joinToString(",") { it.id.toString() }
+                            navController.navigate(Screen.Slideshow.createRoute("STORY", idsArg))
                         }
                     },
                     onBack = { navController.popBackStack() }

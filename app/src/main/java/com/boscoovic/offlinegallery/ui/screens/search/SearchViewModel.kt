@@ -23,6 +23,9 @@ enum class SearchQuickFilter(val label: String) {
     SCREENSHOTS("Screenshots"),
     CAMERA("Camera"),
     FAVORITES("Favorites"),
+    GIFS("GIFs"),
+    PORTRAIT("Portrait"),
+    LANDSCAPE("Landscape"),
     LARGE_FILES("Large files")
 }
 
@@ -85,7 +88,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun applyQuickFilter(items: List<MediaItem>, filter: SearchQuickFilter): List<MediaItem> {
+    fun applyQuickFilter(items: List<MediaItem>, filter: SearchQuickFilter): List<MediaItem> {
         return when (filter) {
             SearchQuickFilter.ALL -> items
             SearchQuickFilter.PHOTOS -> items.filter { it.mediaType == MediaType.IMAGE }
@@ -99,6 +102,12 @@ class SearchViewModel @Inject constructor(
                     it.bucketName.equals("DCIM", ignoreCase = true)
             }
             SearchQuickFilter.FAVORITES -> items.filter { it.isFavorite }
+            SearchQuickFilter.GIFS -> items.filter {
+                it.mimeType.contains("gif", ignoreCase = true) ||
+                    it.displayName.endsWith(".gif", ignoreCase = true)
+            }
+            SearchQuickFilter.PORTRAIT -> items.filter { it.height > it.width && it.width > 0 }
+            SearchQuickFilter.LANDSCAPE -> items.filter { it.width > it.height && it.height > 0 }
             SearchQuickFilter.LARGE_FILES -> items.filter { it.size >= 10L * 1024L * 1024L }
         }
     }

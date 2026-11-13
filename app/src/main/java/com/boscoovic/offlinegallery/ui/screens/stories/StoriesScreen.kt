@@ -119,6 +119,14 @@ fun StoriesScreen(
                                 .padding(16.dp)
                         ) {
                             Text(
+                                text = story.category.badge.uppercase(),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
                                 text = story.title,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,

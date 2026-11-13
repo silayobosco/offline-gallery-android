@@ -8,6 +8,8 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.lifecycle.SavedStateHandle
@@ -59,17 +61,20 @@ data class DrawPath(
 
 data class EditorState(
     val rotationDegrees: Float = 0f,
+    val straightenDegrees: Float = 0f, // -45 to 45
     val isFlippedHorizontal: Boolean = false,
     val brightness: Float = 0f, // -100 to 100
     val contrast: Float = 1f, // 0.5 to 1.5
     val saturation: Float = 1f, // 0 to 2
     val warmth: Float = 0f, // -50 to 50
+    val vignette: Float = 0f, // 0 to 1
     val activeFilter: FilterPreset = FilterPreset.ORIGINAL,
     val drawPaths: List<DrawPath> = emptyList()
 )
 
 data class EditorUiState(
     val sourceItem: MediaItem? = null,
+    val initialBitmap: Bitmap? = null,
     val originalBitmap: Bitmap? = null,
     val previewBitmap: Bitmap? = null,
     val currentTool: EditorTool = EditorTool.CROP_ROTATE,
@@ -110,6 +115,7 @@ class EditorViewModel @Inject constructor(
                         val bitmap = MediaStore.Images.Media.getBitmap(context.contentResolver, item.uri)
                         _uiState.value = _uiState.value.copy(
                             sourceItem = item,
+                            initialBitmap = bitmap,
                             originalBitmap = bitmap,
                             previewBitmap = bitmap
                         )
@@ -183,6 +189,24 @@ class EditorViewModel @Inject constructor(
     fun setWarmth(warmth: Float) {
         val current = _uiState.value.currentState
         applyState(current.copy(warmth = warmth))
+    }
+
+    fun setStraighten(degrees: Float) {
+        val current = _uiState.value.currentState
+        applyState(current.copy(straightenDegrees = degrees.coerceIn(-45f, 45f)))
+    }
+
+    fun setVignette(vignette: Float) {
+        val current = _uiState.value.currentState
+        applyState(current.copy(vignette = vignette.coerceIn(0f, 1f)))
+    }
+
+    fun clearDrawPaths() {
+        val current = _uiState.value.currentState
+        if (current.drawPaths.isNotEmpty()) {
+            pushUndo()
+            applyState(current.copy(drawPaths = emptyList()))
+        }
     }
 
     fun setFilter(filter: FilterPreset) {
@@ -259,7 +283,7 @@ class EditorViewModel @Inject constructor(
 
     private fun applyEditsToBitmap(src: Bitmap, state: EditorState): Bitmap {
         val matrix = Matrix().apply {
-            postRotate(state.rotationDegrees)
+            postRotate(state.rotationDegrees + state.straightenDegrees)
             if (state.isFlippedHorizontal) postScale(-1f, 1f)
         }
         val transformed = Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
@@ -281,6 +305,19 @@ class EditorViewModel @Inject constructor(
             )
         )
         colorMatrix.postConcat(contrastMatrix)
+
+        if (state.warmth != 0f) {
+            val w = state.warmth
+            val warmthMatrix = ColorMatrix(
+                floatArrayOf(
+                    1f, 0f, 0f, 0f, w * 0.6f,
+                    0f, 1f, 0f, 0f, w * 0.15f,
+                    0f, 0f, 1f, 0f, -w * 0.6f,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+            colorMatrix.postConcat(warmthMatrix)
+        }
 
         when (state.activeFilter) {
             FilterPreset.BW -> {
@@ -352,6 +389,27 @@ class EditorViewModel @Inject constructor(
             drawPaint.color = drawPath.color
             drawPaint.strokeWidth = drawPath.strokeWidth
             canvas.drawPath(drawPath.path, drawPaint)
+        }
+
+        if (state.vignette > 0.01f) {
+            val cx = output.width / 2f
+            val cy = output.height / 2f
+            val radius = maxOf(output.width, output.height) * 0.72f
+            val vignettePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = RadialGradient(
+                    cx,
+                    cy,
+                    radius,
+                    intArrayOf(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.argb((state.vignette * 210).toInt().coerceIn(0, 230), 0, 0, 0)
+                    ),
+                    floatArrayOf(0f, 0.45f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawRect(0f, 0f, output.width.toFloat(), output.height.toFloat(), vignettePaint)
         }
 
         return output

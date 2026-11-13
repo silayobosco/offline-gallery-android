@@ -54,5 +54,14 @@ class SecureFolderViewModel @Inject constructor(
             repository.restoreFromSecureFolder(mediaId)
         }
     }
+
+    fun restoreItems(mediaIds: Set<Long>) {
+        if (mediaIds.isEmpty()) return
+        viewModelScope.launch {
+            mediaIds.forEach { id ->
+                repository.restoreFromSecureFolder(id)
+            }
+        }
+    }
 }
 

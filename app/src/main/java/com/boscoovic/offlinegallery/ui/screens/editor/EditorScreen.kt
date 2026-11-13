@@ -24,18 +24,22 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.CropRotate
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RotateRight
@@ -70,7 +74,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -99,6 +108,11 @@ fun EditorScreen(
     var cropTop by remember { mutableFloatStateOf(0.05f) }
     var cropRight by remember { mutableFloatStateOf(0.95f) }
     var cropBottom by remember { mutableFloatStateOf(0.95f) }
+
+    // Draw tool state
+    var drawColor by remember { mutableStateOf(Color.Red) }
+    var drawStrokeWidth by remember { mutableFloatStateOf(14f) }
+    var activeStrokePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
 
     Column(
         modifier = modifier
@@ -188,7 +202,7 @@ fun EditorScreen(
             var isComparingOriginal by remember { mutableStateOf(false) }
 
             val displayedBitmap = if (isComparingOriginal) {
-                uiState.originalBitmap ?: uiState.previewBitmap
+                uiState.initialBitmap ?: uiState.originalBitmap ?: uiState.previewBitmap
             } else {
                 uiState.previewBitmap
             }
@@ -237,6 +251,89 @@ fun EditorScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                }
+
+                // Interactive Draw Canvas when Draw tool is active
+                if (uiState.currentTool == EditorTool.DRAW && totalWidthPx > 0f && totalHeightPx > 0f && !isComparingOriginal) {
+                    val bmpAspect = bmp.width.toFloat() / bmp.height.toFloat().coerceAtLeast(1f)
+                    val boxAspect = totalWidthPx / totalHeightPx
+                    val imgW: Float
+                    val imgH: Float
+                    if (bmpAspect > boxAspect) {
+                        imgW = totalWidthPx
+                        imgH = totalWidthPx / bmpAspect
+                    } else {
+                        imgH = totalHeightPx
+                        imgW = totalHeightPx * bmpAspect
+                    }
+                    val imgLeft = (totalWidthPx - imgW) / 2f
+                    val imgTop = (totalHeightPx - imgH) / 2f
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(bmp.width, bmp.height, drawColor, drawStrokeWidth) {
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        if (offset.x in imgLeft..(imgLeft + imgW) && offset.y in imgTop..(imgTop + imgH)) {
+                                            activeStrokePoints = listOf(offset)
+                                        }
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val clamped = Offset(
+                                            change.position.x.coerceIn(imgLeft, imgLeft + imgW),
+                                            change.position.y.coerceIn(imgTop, imgTop + imgH)
+                                        )
+                                        if (activeStrokePoints.isNotEmpty()) {
+                                            activeStrokePoints = activeStrokePoints + clamped
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        if (activeStrokePoints.size >= 2) {
+                                            val scaleX = bmp.width.toFloat() / imgW
+                                            val scaleY = bmp.height.toFloat() / imgH
+                                            val androidPath = android.graphics.Path().apply {
+                                                val first = activeStrokePoints.first()
+                                                moveTo((first.x - imgLeft) * scaleX, (first.y - imgTop) * scaleY)
+                                                for (pt in activeStrokePoints.drop(1)) {
+                                                    lineTo((pt.x - imgLeft) * scaleX, (pt.y - imgTop) * scaleY)
+                                                }
+                                            }
+                                            viewModel.addDrawPath(
+                                                DrawPath(
+                                                    path = androidPath,
+                                                    color = drawColor.toArgb(),
+                                                    strokeWidth = drawStrokeWidth * ((scaleX + scaleY) / 2f)
+                                                )
+                                            )
+                                        }
+                                        activeStrokePoints = emptyList()
+                                    },
+                                    onDragCancel = {
+                                        activeStrokePoints = emptyList()
+                                    }
+                                )
+                            }
+                    ) {
+                        if (activeStrokePoints.size >= 2) {
+                            val previewPath = Path().apply {
+                                moveTo(activeStrokePoints.first().x, activeStrokePoints.first().y)
+                                for (pt in activeStrokePoints.drop(1)) {
+                                    lineTo(pt.x, pt.y)
+                                }
+                            }
+                            drawPath(
+                                path = previewPath,
+                                color = drawColor,
+                                style = Stroke(
+                                    width = drawStrokeWidth,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
                     }
                 }
 
@@ -449,6 +546,32 @@ fun EditorScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text(
+                                text = "Straighten: ${uiState.currentState.straightenDegrees.roundToInt()}°",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                            if (uiState.currentState.straightenDegrees != 0f) {
+                                Text(
+                                    text = "Reset",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.clickable { viewModel.setStraighten(0f) }
+                                )
+                            }
+                        }
+                        Slider(
+                            value = uiState.currentState.straightenDegrees,
+                            onValueChange = { viewModel.setStraighten(it) },
+                            valueRange = -45f..45f
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Row {
                                 IconButton(onClick = { viewModel.rotate90() }) {
                                     Icon(Icons.Default.RotateRight, contentDescription = "Rotate 90", tint = Color.White)
@@ -477,7 +600,12 @@ fun EditorScreen(
                     }
                 }
                 EditorTool.ADJUST -> {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Text("Brightness", color = Color.White, fontSize = 12.sp)
                         Slider(
                             value = uiState.currentState.brightness,
@@ -495,6 +623,18 @@ fun EditorScreen(
                             value = uiState.currentState.saturation,
                             onValueChange = { viewModel.setSaturation(it) },
                             valueRange = 0f..2f
+                        )
+                        Text("Warmth", color = Color.White, fontSize = 12.sp)
+                        Slider(
+                            value = uiState.currentState.warmth,
+                            onValueChange = { viewModel.setWarmth(it) },
+                            valueRange = -50f..50f
+                        )
+                        Text("Vignette", color = Color.White, fontSize = 12.sp)
+                        Slider(
+                            value = uiState.currentState.vignette,
+                            onValueChange = { viewModel.setVignette(it) },
+                            valueRange = 0f..1f
                         )
                     }
                 }
@@ -514,7 +654,56 @@ fun EditorScreen(
                     }
                 }
                 EditorTool.DRAW -> {
-                    Text("Drawing tool active", color = Color.White)
+                    val palette = listOf(
+                        Color.Red,
+                        Color(0xFFFF9800),
+                        Color.Yellow,
+                        Color(0xFF4CAF50),
+                        Color(0xFF2196F3),
+                        Color.White,
+                        Color.Black
+                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                palette.forEach { color ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                            .border(
+                                                width = if (drawColor == color) 2.5.dp else 1.dp,
+                                                color = if (drawColor == color) MaterialTheme.colorScheme.primary else Color.Gray,
+                                                shape = CircleShape
+                                            )
+                                            .clickable { drawColor = color }
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { viewModel.clearDrawPaths() },
+                                enabled = uiState.currentState.drawPaths.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "Clear drawings",
+                                    tint = if (uiState.currentState.drawPaths.isNotEmpty()) Color.White else Color.Gray
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Brush Size: ${drawStrokeWidth.roundToInt()}px", color = Color.White, fontSize = 12.sp)
+                        Slider(
+                            value = drawStrokeWidth,
+                            onValueChange = { drawStrokeWidth = it },
+                            valueRange = 4f..40f
+                        )
+                    }
                 }
             }
         }
@@ -544,6 +733,12 @@ fun EditorScreen(
                 label = "Filters",
                 isSelected = uiState.currentTool == EditorTool.FILTERS,
                 onClick = { viewModel.selectTool(EditorTool.FILTERS) }
+            )
+            ToolTab(
+                icon = Icons.Default.Brush,
+                label = "Draw",
+                isSelected = uiState.currentTool == EditorTool.DRAW,
+                onClick = { viewModel.selectTool(EditorTool.DRAW) }
             )
         }
     }

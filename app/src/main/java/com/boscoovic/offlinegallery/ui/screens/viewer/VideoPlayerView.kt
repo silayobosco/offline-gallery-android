@@ -111,6 +111,15 @@ fun VideoPlayerView(
     var isSpeedUpActive by remember { mutableStateOf(false) }
     var isSpeedLocked by remember { mutableStateOf(false) }
     var slideDownProgress by remember { mutableFloatStateOf(0f) }
+    var seekFeedbackText by remember { mutableStateOf<String?>(null) }
+    var seekFeedbackTrigger by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(seekFeedbackTrigger) {
+        if (seekFeedbackTrigger > 0L) {
+            delay(700L)
+            seekFeedbackText = null
+        }
+    }
 
     val exoPlayer = remember(item.uri) {
         ExoPlayer.Builder(context).build().apply {
@@ -335,8 +344,43 @@ fun VideoPlayerView(
                 }
             },
             onDoubleTap = onDoubleTapLike,
+            onDoubleTapSeek = { deltaMs ->
+                val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, exoPlayer.duration.coerceAtLeast(0L))
+                exoPlayer.seekTo(target)
+                seekFeedbackText = if (deltaMs < 0) "-10s" else "+10s"
+                seekFeedbackTrigger = System.currentTimeMillis()
+                onPlayerStateUpdated(
+                    exoPlayer.isPlaying,
+                    target,
+                    exoPlayer.duration.coerceAtLeast(0L)
+                )
+            },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Double-tap Seek Feedback Pill (-10s / +10s)
+        AnimatedVisibility(
+            visible = seekFeedbackText != null && isActive,
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(220)),
+            modifier = Modifier
+                .align(if (seekFeedbackText == "-10s") Alignment.CenterStart else Alignment.CenterEnd)
+                .padding(horizontal = 36.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    text = seekFeedbackText ?: "",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
 
         // TikTok Floating Speed Pill (Top Center, clearly below counter pill)
         AnimatedVisibility(
@@ -431,6 +475,7 @@ private fun VideoGestureSurface(
     onMiddleHold: () -> Unit,
     onTap: () -> Unit,
     onDoubleTap: () -> Unit,
+    onDoubleTapSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -486,7 +531,11 @@ private fun VideoGestureSurface(
                                         pointer.consume()
                                         val now = System.currentTimeMillis()
                                         if (now - lastTapTime < 320L) {
-                                            onDoubleTap()
+                                            when {
+                                                startPos.x < width * 0.25f -> onDoubleTapSeek(-10_000L)
+                                                startPos.x > width * 0.75f -> onDoubleTapSeek(10_000L)
+                                                else -> onDoubleTap()
+                                            }
                                             lastTapTime = 0L
                                         } else {
                                             lastTapTime = now

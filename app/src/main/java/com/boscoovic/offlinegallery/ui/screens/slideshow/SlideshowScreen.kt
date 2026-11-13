@@ -54,6 +54,7 @@ import coil.request.ImageRequest
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun SlideshowScreen(
@@ -75,6 +76,10 @@ fun SlideshowScreen(
                 repository.getAlbumMedia(albumId, isCustom = true)
             }
             "SECURE" -> repository.getSecureItems()
+            "STORY" -> {
+                val idSet = contextArg.split(",").mapNotNull { it.toLongOrNull() }.toSet()
+                repository.getAllMedia().map { all -> all.filter { it.id in idSet } }
+            }
             else -> repository.getAllMedia()
         }
     }
