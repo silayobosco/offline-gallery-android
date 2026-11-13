@@ -1,6 +1,6 @@
 # Lumina Gallery (Offline Android Gallery)
 
-A modern, native, strictly offline Android gallery app inspired by Samsung Gallery and One UI design principles. Built with **Jetpack Compose**, **Room**, and **MediaStore**.
+A modern, native, strictly offline Android gallery app inspired by Samsung Gallery and One UI design principles. Built with **Jetpack Compose**, **Room**, **Hilt**, **Media3**, and **MediaStore**.
 
 ---
 
@@ -8,42 +8,38 @@ A modern, native, strictly offline Android gallery app inspired by Samsung Galle
 
 - **Strictly Offline**: Zero internet permissions (`android.permission.INTERNET` and `ACCESS_NETWORK_STATE` are omitted from the manifest). No analytics, no ads, no cloud sync, and no third-party tracking.
 - **Pictures Timeline**:
-  - Grouped by day with sticky date headers.
-  - Smooth pinch-to-zoom to switch grid density dynamically between 2 and 6 columns.
-  - Video duration pills and favorite indicators.
+  - Grouped by day with sticky date headers and a fast-scroll scrubber (`FastScrollScrubber`).
+  - Smooth pinch-to-zoom to switch grid density dynamically between 2 and 5 columns.
+  - Long-press & drag-to-select (`DragSelectGrid`) with batch actions (Share, Favorite, Move/Add to Album, Hide, Delete) and Back-to-exit selection mode.
   - Filter chips: All, Photos, Videos, Favorites.
-  - Multi-select mode with batch actions (Share, Favorite, Move, Hide, Delete).
 - **Albums & Auto-Buckets**:
+  - 2×2 top shortcuts grid for **Favorites**, **Stories**, **Secure Folder**, and **Recycle Bin**.
   - Device albums automatically grouped from MediaStore (Camera, Screenshots, Downloads, Movies).
-  - Virtual custom albums: create, rename, delete, add/remove items.
-  - Quick shortcuts for Favorites, Secure Folder, and Recycle Bin.
-- **Full-Screen Media Viewer**:
-  - Horizontal swipe pager with context preservation (All, Album, Favorites).
-  - Gesture support: pinch-to-zoom, pan, and double-tap to reset/zoom.
-  - Media3 ExoPlayer integration for offline video playback with custom controls.
-  - Swipe-up / Info details panel displaying full EXIF data (camera model, aperture, shutter speed, ISO, focal length, GPS coordinates).
-- **Recycle Bin**:
-  - App-managed trash bin with automatic 30-day retention.
-  - Daily background purge worker powered by AndroidX WorkManager.
-  - Single and multi-select restore or permanent delete, plus "Empty Bin".
+  - Virtual custom albums: create, rename, delete, and add/remove items.
+- **Full-Screen Media Viewer & Video Player**:
+  - Configurable **Vertical** (TikTok-style) or **Horizontal** swipe pager with context preservation (`All`, `Album`, `Custom Album`, `Favorites`, `Secure`), toggleable bottom **Filmstrip**, and swipe-down to dismiss (in horizontal mode).
+  - Gesture support: pinch-to-zoom, pan, double-tap to zoom/like, and swipe-up/left for full EXIF details (camera model, aperture, shutter speed, ISO, focal length, GPS).
+  - **Media3 ExoPlayer** video playback: 2× edge-hold speed & slide-down-to-lock, double-tap left/right edges to seek ±10s, interactive progress scrub bar, mute/speed controls, and configurable end-of-video behavior (Loop, Next, Stop).
+  - **Set as Wallpaper** (Home screen, Lock screen, Both, or Other apps).
+- **Photo Editor**:
+  - **Crop & Rotate**: Interactive crop box mapped to rendered image bounds with rule-of-thirds grid, 4 draggable corner handles, aspect ratio presets (`Free`, `1:1`, `4:3`, `16:9`, `9:16`), 90° rotate, horizontal flip, and **Straighten** (`-45°` to `+45°`).
+  - **Adjustments**: Brightness, Contrast, Saturation, Warmth, and Vignette.
+  - **Filters & Draw**: Preset filters (`Vivid`, `Warm`, `Cool`, `B&W`, `Sepia`, `Dramatic`) and a freehand **Draw** tool with a 7-color palette and brush size slider.
+  - **Hold-to-Compare** original preview, Undo/Redo stack, and Save as Copy (with EXIF preservation) or Overwrite Original.
+- **Stories & Context-Aware Slideshow**:
+  - Offline curated **Stories**: **On This Day**, **Favorites Reel**, **Event Highlights** (48-hour burst clustering), **Monthly Memories**, and **Year in Review**.
+  - Tapping a story, album, or viewer slideshow launches **SlideshowScreen** scoped to that exact context (`Story`, `Album`, `Custom Album`, `Favorites`, `Secure`, or `All`) with **Ken Burns** zoom/pan animation, progress indicator, shuffle, and customizable intervals.
+- **Offline Instant Search**:
+  - Searches filenames, albums, formatted dates/months/years, MIME formats, paths, and orientations (`portrait`, `landscape`, `panorama`, `gif`).
+  - Quick filter chips (`All`, `Photos`, `Videos`, `Screenshots`, `Camera`, `Favorites`, `GIFs`, `Portrait`, `Landscape`, `Large files`) and recent search history.
 - **Secure Folder (Hidden Items)**:
   - Hidden photos/videos moved into encrypted app-private storage via AndroidX Security (`EncryptedFile` + AES-256 GCM).
-  - Access protected by biometric authentication (fingerprint/face) or device credentials via AndroidX Biometric.
-- **Photo Editor**:
-  - Non-destructive editing pipeline in memory.
-  - Transform: 90° rotation and horizontal flip.
-  - Adjustments: Brightness, contrast, saturation, warmth.
-  - Preset Filters: Vivid, Warm, Cool, Black & White, Sepia, Dramatic.
-  - Freehand drawing tool with custom stroke colors.
-  - Save as a new copy with EXIF metadata preservation.
-- **Stories & Auto Collections**:
-  - Automatic time and location clustering for monthly memory collections.
-- **Slideshow**:
-  - Full-screen slideshow with customizable intervals (2s, 3s, 5s) and play/pause controls.
-- **Settings & Privacy**:
-  - Dark / Light / System default themes.
-  - Grid customization.
-  - Transparent privacy disclosure confirming offline status.
+  - Biometric / device credential lock via AndroidX Biometric, `FLAG_SECURE` screenshot & recents protection, automatic re-lock when backgrounded (`ON_STOP`), and long-press multi-select batch restore.
+- **Recycle Bin**:
+  - App-managed trash bin with automatic 30-day retention and daily WorkManager purge worker.
+  - Single and multi-select restore or permanent delete, plus "Empty Bin".
+- **Settings & Customization**:
+  - Theme (`System`, `Light`, `Dark`), Dynamic Color, Default Grid Columns (`2`–`5 cols`), Viewer Scroll Direction (`Vertical` / `Horizontal`), Filmstrip toggle, Video autoplay & end action, cache size inspection/clearing, and transparent privacy disclosure.
 
 ---
 
@@ -57,27 +53,29 @@ com.boscoovic.offlinegallery/
 │   ├── mediastore/                       # MediaStoreFetcher & MediaStoreObserver (ContentObserver)
 │   ├── local/                            # Room database, entities (MediaMeta, Trash, CustomAlbum) & DAOs
 │   ├── repository/                       # MediaRepository, SecureStorageManager, TrashPurgeWorker
+│   ├── settings/                         # SettingsManager (SharedPreferences / StateFlows)
 │   └── di/                               # Hilt modules (DatabaseModule, RepositoryModule)
 └── ui/
     ├── MainActivity.kt                   # Single activity entry point with edge-to-edge Compose
     ├── theme/                            # Material 3 colors, typography, and shape definitions
-    ├── components/                       # Reusable UI widgets (MediaThumbnail, StickyHeader, SelectionBar)
+    ├── components/                       # Reusable UI widgets (DragSelectGrid, FastScrollScrubber, MediaThumbnail, StickyHeader, SelectionBar)
     ├── navigation/                       # Screen routes and GalleryNavGraph
     └── screens/
+        ├── main/                         # MainGalleryScreen (Pictures & Albums tabs + onboarding)
         ├── pictures/                     # Main grid timeline & PicturesViewModel
         ├── albums/                       # Albums grid & AlbumDetailScreen
-        ├── viewer/                       # Full-screen viewer, ZoomableImage, VideoPlayerView, Details
-        ├── editor/                       # Image editor with adjustments, filters, rotate, flip
+        ├── viewer/                       # Full-screen viewer, ZoomableImage, VideoPlayerView, MediaDetailsSheet
+        ├── editor/                       # Photo editor (Crop, Straighten, Adjust, Filters, Draw)
         ├── recyclebin/                   # Recycle Bin with 30-day purge & days-remaining badges
-        ├── secure/                       # Biometric-gated secure folder
-        ├── search/                       # Offline instant search & recent history
-        ├── stories/                      # Auto-generated memory collections
-        ├── slideshow/                    # Presentation slideshow
-        └── settings/                     # Appearance, grid settings, and privacy statement
+        ├── secure/                       # Biometric-gated secure folder with FLAG_SECURE & multi-select
+        ├── search/                       # Offline instant search & quick filters
+        ├── stories/                      # Offline curated memory collections
+        ├── slideshow/                    # Context-aware Ken Burns slideshow
+        └── settings/                     # Appearance, viewer, grid, video, and privacy settings
 ```
 
 - **UI**: Jetpack Compose with Material 3 (One UI layout paradigms).
-- **Database**: Room for app-managed metadata (favorites, custom albums, trash, hidden items).
+- **Database**: Room for app-managed metadata (favorites, custom albums, trash, hidden items, recent searches).
 - **Source of Truth**: Android `MediaStore` with real-time `ContentObserver`.
 - **Dependency Injection**: Hilt.
 - **Async & Concurrency**: Kotlin Coroutines + Flow.
@@ -85,6 +83,14 @@ com.boscoovic.offlinegallery/
 - **Video Playback**: AndroidX Media3 ExoPlayer.
 - **Security & Biometrics**: AndroidX Biometric + AndroidX Security Crypto (`EncryptedFile`).
 - **Scheduled Background Tasks**: AndroidX WorkManager.
+
+---
+
+## Build & Test
+
+```powershell
+.\gradlew.bat testDebugUnitTest assembleDebug
+```
 
 ---
 
