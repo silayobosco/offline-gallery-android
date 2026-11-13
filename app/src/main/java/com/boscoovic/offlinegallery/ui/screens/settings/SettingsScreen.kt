@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.settings.DefaultVideoEndAction
@@ -187,7 +188,15 @@ fun SettingsScreen(
                                 FilterChip(
                                     selected = uiState.gridColumns == cols,
                                     onClick = { viewModel.setDefaultGridColumns(cols) },
-                                    label = { Text("$cols columns") }
+                                    label = {
+                                        Text(
+                                            text = "$cols cols",
+                                            maxLines = 1,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }

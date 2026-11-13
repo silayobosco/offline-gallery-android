@@ -544,6 +544,7 @@ fun MainGalleryScreen(
                     gridState = albumsGridState,
                     onAlbumClick = onAlbumClick,
                     onFavoritesClick = onFavoritesClick,
+                    onStoriesClick = onStoriesClick,
                     onSecureFolderClick = onSecureFolderClick,
                     onRecycleBinClick = onRecycleBinClick
                 )
@@ -792,36 +793,51 @@ private fun AlbumsTabContent(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Shortcuts Section (Favorites, Secure Folder, Recycle Bin)
+                // Shortcuts Section (Favorites, Stories, Secure Folder, Recycle Bin)
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ShortcutCard(
-                            icon = Icons.Default.Favorite,
-                            iconTint = FavoriteRed,
-                            title = stringResource(R.string.favorites),
-                            count = uiState.favoritesCount,
-                            onClick = onFavoritesClick,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ShortcutCard(
-                            icon = Icons.Default.Lock,
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            title = stringResource(R.string.secure_folder),
-                            count = uiState.secureCount,
-                            onClick = onSecureFolderClick,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ShortcutCard(
-                            icon = Icons.Default.Delete,
-                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            title = stringResource(R.string.recycle_bin),
-                            count = uiState.trashCount,
-                            onClick = onRecycleBinClick,
-                            modifier = Modifier.weight(1f)
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ShortcutCard(
+                                icon = Icons.Default.Favorite,
+                                iconTint = FavoriteRed,
+                                title = stringResource(R.string.favorites),
+                                count = uiState.favoritesCount,
+                                onClick = onFavoritesClick,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ShortcutCard(
+                                icon = Icons.Default.AutoAwesome,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                title = stringResource(R.string.stories),
+                                count = 0,
+                                onClick = onStoriesClick,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ShortcutCard(
+                                icon = Icons.Default.Lock,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                title = stringResource(R.string.secure_folder),
+                                count = uiState.secureCount,
+                                onClick = onSecureFolderClick,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ShortcutCard(
+                                icon = Icons.Default.Delete,
+                                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                title = stringResource(R.string.recycle_bin),
+                                count = uiState.trashCount,
+                                onClick = onRecycleBinClick,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
 

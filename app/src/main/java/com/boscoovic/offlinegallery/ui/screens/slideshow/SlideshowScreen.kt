@@ -128,18 +128,27 @@ fun SlideshowScreen(
     val safeIndex = currentIndex.coerceIn(0, items.lastIndex)
     val currentItem = items[safeIndex]
 
-    // Subtle Ken Burns zoom animation per slide
+    // Noticeable cinematic Ken Burns zoom + pan animation per slide
     var zoomTarget by remember(currentItem.id, safeIndex) { mutableStateOf(false) }
     LaunchedEffect(currentItem.id, safeIndex) {
         zoomTarget = true
     }
     val kenBurnsScale by animateFloatAsState(
-        targetValue = if (zoomTarget && isPlaying) 1.07f else 1.0f,
+        targetValue = if (zoomTarget && isPlaying) 1.18f else 1.0f,
         animationSpec = tween(
             durationMillis = (intervalSeconds * 1000L).toInt(),
             easing = LinearEasing
         ),
         label = "kenBurnsScale"
+    )
+    val panDirection = if (safeIndex % 2 == 0) 1f else -1f
+    val kenBurnsPanX by animateFloatAsState(
+        targetValue = if (zoomTarget && isPlaying) 28f * panDirection else -12f * panDirection,
+        animationSpec = tween(
+            durationMillis = (intervalSeconds * 1000L).toInt(),
+            easing = LinearEasing
+        ),
+        label = "kenBurnsPanX"
     )
 
     Box(
@@ -159,12 +168,13 @@ fun SlideshowScreen(
                     .crossfade(true)
                     .build(),
                 contentDescription = item.displayName,
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer(
                         scaleX = kenBurnsScale,
-                        scaleY = kenBurnsScale
+                        scaleY = kenBurnsScale,
+                        translationX = kenBurnsPanX
                     )
             )
         }
