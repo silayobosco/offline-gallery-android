@@ -3,14 +3,19 @@ package com.boscoovic.offlinegallery.ui.screens.viewer
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -53,6 +59,10 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -69,10 +79,12 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,8 +92,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import com.boscoovic.offlinegallery.data.settings.ViewerScrollDirection
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -458,12 +472,44 @@ fun MediaViewerScreen(
 
                 // Right: Top Kebab Menu controlling Queue & Playback (Shuffle, Video End Behavior, Playback Speed, Slideshow)
                 Box {
+                    val onboardingPulseAlpha = if (!uiState.hasSeenViewerOnboarding) {
+                        val pulseTransition = rememberInfiniteTransition(label = "kebabPulse")
+                        val pulse by pulseTransition.animateFloat(
+                            initialValue = 0.4f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(900),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "kebabPulseAlpha"
+                        )
+                        pulse
+                    } else {
+                        0f
+                    }
+
                     IconButton(
-                        onClick = { showQueueMenu = true },
+                        onClick = {
+                            showQueueMenu = true
+                            if (!uiState.hasSeenViewerOnboarding) {
+                                viewModel.markOnboardingSeen()
+                            }
+                        },
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.45f))
+                            .then(
+                                if (onboardingPulseAlpha > 0f) {
+                                    Modifier.border(
+                                        2.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = onboardingPulseAlpha),
+                                        CircleShape
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
@@ -651,7 +697,7 @@ fun MediaViewerScreen(
             }
         }
 
-        // Floating Pill Counter below the top bar
+        // Floating Pill Counter below the top bar with scroll direction clue
         AnimatedVisibility(
             visible = uiState.isChromeVisible,
             enter = fadeIn(),
@@ -661,12 +707,20 @@ fun MediaViewerScreen(
                 .statusBarsPadding()
                 .padding(top = 58.dp)
         ) {
-            Box(
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 14.dp, vertical = 4.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
+                Icon(
+                    imageVector = if (isVertical) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                    contentDescription = if (isVertical) "Vertical scroll" else "Horizontal scroll",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(14.dp)
+                )
                 Text(
                     text = "${pagerState.currentPage + 1} / ${uiState.items.size}",
                     color = Color.White,
@@ -674,6 +728,25 @@ fun MediaViewerScreen(
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+
+        // First-time Viewer Onboarding Overlay: Animated scroll direction cue + Kebab/Settings customization hint
+        AnimatedVisibility(
+            visible = !uiState.hasSeenViewerOnboarding && uiState.isChromeVisible && uiState.items.isNotEmpty(),
+            enter = fadeIn(tween(300)),
+            exit = fadeOut(tween(250)),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 24.dp)
+        ) {
+            ViewerOnboardingCoachmark(
+                isVertical = isVertical,
+                onSwitchDirection = {
+                    val nextDir = viewModel.toggleScrollDirection()
+                    feedbackNotice = "Scroll: ${if (nextDir == ViewerScrollDirection.VERTICAL) "Vertical 📱" else "Horizontal ↔️"}"
+                },
+                onDismiss = { viewModel.markOnboardingSeen() }
+            )
         }
 
         // Floating feedback banner for Shuffle / Repeat status changes
@@ -1622,4 +1695,170 @@ private fun HorizontalThumbnailFilmstrip(
         }
     }
 }
+
+@Composable
+private fun ViewerOnboardingCoachmark(
+    isVertical: Boolean,
+    onSwitchDirection: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "onboardingArrowBounce")
+    val bounceOffset by infiniteTransition.animateFloat(
+        initialValue = -6f,
+        targetValue = 6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(750),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "arrowBounce"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF16181D).copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+        shadowElevation = 16.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+        ) {
+            // Animated Directional Arrow Cue
+            if (isVertical) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .offset(y = bounceOffset.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.SwapVert,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .offset(y = (-bounceOffset).dp)
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .offset(x = bounceOffset.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .offset(x = (-bounceOffset).dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = if (isVertical) "Vertical Scroll Mode" else "Horizontal Scroll Mode",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = if (isVertical) {
+                    "Swipe up or down to browse photos & videos.\nSwipe left for details • Swipe right to delete."
+                } else {
+                    "Swipe left or right to browse photos & videos.\nSwipe up for details • Swipe down to close."
+                },
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 13.sp,
+                lineHeight = 18.sp
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Kebab & Settings Customization Tip
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Tip: Open the top-right ⋮ menu or Settings to switch scroll direction, toggle the thumbnail strip, speed, and repeat mode.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onSwitchDirection,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = if (isVertical) "Try Horizontal" else "Try Vertical",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                }
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Got it", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
 

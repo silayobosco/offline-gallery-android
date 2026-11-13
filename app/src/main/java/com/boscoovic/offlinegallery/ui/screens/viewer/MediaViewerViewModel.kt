@@ -57,7 +57,8 @@ data class MediaViewerUiState(
     val currentExif: ExifData? = null,
     val allAlbums: List<Album> = emptyList(),
     val viewerScrollDirection: ViewerScrollDirection = ViewerScrollDirection.VERTICAL,
-    val showDetailsBanner: Boolean = true
+    val showDetailsBanner: Boolean = true,
+    val hasSeenViewerOnboarding: Boolean = true
 )
 
 @HiltViewModel
@@ -94,7 +95,8 @@ class MediaViewerViewModel @Inject constructor(
         _currentExif,
         _allAlbums,
         settingsManager.viewerScrollDirection,
-        settingsManager.showDetailsBanner
+        settingsManager.showDetailsBanner,
+        settingsManager.hasSeenViewerOnboarding
     ) { args: Array<Any?> ->
         val currentShuffleMode = args[5] as ShuffleMode
         @Suppress("UNCHECKED_CAST")
@@ -109,7 +111,8 @@ class MediaViewerViewModel @Inject constructor(
             currentExif = args[6] as ExifData?,
             allAlbums = args[7] as List<Album>,
             viewerScrollDirection = args[8] as ViewerScrollDirection,
-            showDetailsBanner = args[9] as Boolean
+            showDetailsBanner = args[9] as Boolean,
+            hasSeenViewerOnboarding = args[10] as Boolean
         )
     }.stateIn(
         scope = viewModelScope,
@@ -546,6 +549,10 @@ class MediaViewerViewModel @Inject constructor(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(chooser)
+    }
+
+    fun markOnboardingSeen() {
+        settingsManager.markViewerOnboardingSeen()
     }
 
     private fun loadExif(item: MediaItem) {
