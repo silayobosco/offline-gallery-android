@@ -682,7 +682,10 @@ fun MediaViewerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 16.dp, bottom = 100.dp)
+                .padding(
+                    end = 16.dp,
+                    bottom = if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) 220.dp else 164.dp
+                )
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -757,40 +760,74 @@ fun MediaViewerScreen(
 
         // Bottom Controls Container (Auto-adapts between Vertical TikTok style and Horizontal Classic Gallery style)
         if (isVertical) {
-            // VERTICAL MODE: TikTok Progress Bar + Full-width Description Banner
+            // VERTICAL MODE: Google Photos-style Video Scrubber + Thumbnail Filmstrip + Full-width Description Banner
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .then(if (!uiState.isChromeVisible) Modifier.navigationBarsPadding() else Modifier)
             ) {
-                // TikTok Progress / Seek Bar directly above the bottom description bar
                 if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) {
                     val progressFraction = if (isScrubbing) scrubFraction else {
                         (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
                     }
                     val scrubTimeMs = (progressFraction * videoDuration).toLong().coerceIn(0L, videoDuration)
 
-                    TikTokProgressBar(
-                        progressFraction = progressFraction,
-                        scrubTimeMs = scrubTimeMs,
-                        totalDurationMs = videoDuration,
-                        isScrubbing = isScrubbing,
-                        onScrubStart = {
-                            isScrubbing = true
-                            scrubFraction = (videoCurrentPosition.toFloat() / videoDuration.toFloat()).coerceIn(0f, 1f)
-                        },
-                        onScrub = { frac ->
-                            scrubFraction = frac.coerceIn(0f, 1f)
-                            seekPositionRequest = (scrubFraction * videoDuration).toLong()
-                        },
-                        onScrubEnd = {
-                            val finalSeek = (scrubFraction * videoDuration).toLong()
-                            seekPositionRequest = finalSeek
-                            isScrubbing = false
-                        },
+                    AnimatedVisibility(
+                        visible = uiState.isChromeVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        ViewerVideoScrubberBar(
+                            progressFraction = progressFraction,
+                            scrubTimeMs = scrubTimeMs,
+                            videoDuration = videoDuration,
+                            isVideoPlaying = isVideoPlaying,
+                            isMuted = isMuted,
+                            onTogglePlayPause = {
+                                playPauseToggleTrigger = System.currentTimeMillis()
+                            },
+                            onToggleMute = {
+                                isMuted = !isMuted
+                                feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
+                            },
+                            onScrubChange = { frac ->
+                                isScrubbing = true
+                                scrubFraction = frac
+                                seekPositionRequest = (frac * videoDuration).toLong()
+                            },
+                            onScrubFinished = {
+                                val finalSeek = (scrubFraction * videoDuration).toLong()
+                                seekPositionRequest = finalSeek
+                                isScrubbing = false
+                            }
+                        )
+                    }
+                }
+
+                // Mini Thumbnail Filmstrip in Vertical Mode
+                if (uiState.items.size > 1) {
+                    AnimatedVisibility(
+                        visible = uiState.isChromeVisible,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        HorizontalThumbnailFilmstrip(
+                            items = uiState.items,
+                            currentPage = pagerState.currentPage,
+                            onSelectPage = { targetIndex ->
+                                coroutineScope.launch {
+                                    if (kotlin.math.abs(targetIndex - pagerState.currentPage) <= 4) {
+                                        pagerState.animateScrollToPage(targetIndex)
+                                    } else {
+                                        pagerState.scrollToPage(targetIndex)
+                                    }
+                                }
+                            }
+                        )
+                    }
                 }
 
                 // Full-Width Description Bar
@@ -869,100 +906,30 @@ fun MediaViewerScreen(
                         exit = fadeOut(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.65f),
-                                            Color.Black.copy(alpha = 0.88f)
-                                        )
-                                    )
-                                )
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                        ) {
-                            // Row above the scrubber bar: Play Time on left, Mute on right (Google Photos style)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Left: Play Time Counter with quick Play/Pause toggle
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color.Black.copy(alpha = 0.45f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isVideoPlaying) "Pause" else "Play",
-                                        tint = Color.White,
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable {
-                                                playPauseToggleTrigger = System.currentTimeMillis()
-                                            }
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "${formatVideoTime(scrubTimeMs)} / ${formatVideoTime(videoDuration)}",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-
-                                // Right: Mute / Unmute Button (Google Photos style)
-                                IconButton(
-                                    onClick = {
-                                        isMuted = !isMuted
-                                        feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
-                                    },
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.45f))
-                                ) {
-                                    Icon(
-                                        imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                                        contentDescription = if (isMuted) "Unmute" else "Mute",
-                                        tint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                        ViewerVideoScrubberBar(
+                            progressFraction = progressFraction,
+                            scrubTimeMs = scrubTimeMs,
+                            videoDuration = videoDuration,
+                            isVideoPlaying = isVideoPlaying,
+                            isMuted = isMuted,
+                            onTogglePlayPause = {
+                                playPauseToggleTrigger = System.currentTimeMillis()
+                            },
+                            onToggleMute = {
+                                isMuted = !isMuted
+                                feedbackNotice = if (isMuted) "Sound muted 🔇" else "Sound unmuted 🔊"
+                            },
+                            onScrubChange = { frac ->
+                                isScrubbing = true
+                                scrubFraction = frac
+                                seekPositionRequest = (frac * videoDuration).toLong()
+                            },
+                            onScrubFinished = {
+                                val finalSeek = (scrubFraction * videoDuration).toLong()
+                                seekPositionRequest = finalSeek
+                                isScrubbing = false
                             }
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            // Scrubber / Seek Bar spanning full width
-                            Slider(
-                                value = progressFraction,
-                                onValueChange = { frac ->
-                                    isScrubbing = true
-                                    scrubFraction = frac
-                                    seekPositionRequest = (frac * videoDuration).toLong()
-                                },
-                                onValueChangeFinished = {
-                                    val finalSeek = (scrubFraction * videoDuration).toLong()
-                                    seekPositionRequest = finalSeek
-                                    isScrubbing = false
-                                },
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.35f)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(28.dp)
-                            )
-                        }
+                        )
                     }
                 } else if (uiState.showDetailsBanner && currentItem != null) {
                     // Subtle swipe hint in Horizontal mode
@@ -1462,6 +1429,98 @@ private fun HorizontalActionItem(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun ViewerVideoScrubberBar(
+    progressFraction: Float,
+    scrubTimeMs: Long,
+    videoDuration: Long,
+    isVideoPlaying: Boolean,
+    isMuted: Boolean,
+    onTogglePlayPause: () -> Unit,
+    onToggleMute: () -> Unit,
+    onScrubChange: (Float) -> Unit,
+    onScrubFinished: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.65f),
+                        Color.Black.copy(alpha = 0.88f)
+                    )
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isVideoPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable(onClick = onTogglePlayPause)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "${formatVideoTime(scrubTimeMs)} / ${formatVideoTime(videoDuration)}",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            IconButton(
+                onClick = onToggleMute,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+            ) {
+                Icon(
+                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = if (isMuted) "Unmute" else "Mute",
+                    tint = if (isMuted) Color(0xFFFF6E6E) else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Slider(
+            value = progressFraction,
+            onValueChange = onScrubChange,
+            onValueChangeFinished = onScrubFinished,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = Color.White.copy(alpha = 0.35f)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp)
         )
     }
 }
