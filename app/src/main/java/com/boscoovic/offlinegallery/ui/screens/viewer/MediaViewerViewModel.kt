@@ -74,6 +74,9 @@ class MediaViewerViewModel @Inject constructor(
     private val contextType: String = savedStateHandle.get<String>("contextType") ?: "ALL"
     private val contextArg: String = savedStateHandle.get<String>("contextArg") ?: ""
 
+    val viewerContextType: String get() = contextType
+    val viewerContextArg: String get() = contextArg
+
     private val _originalItems = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _allMediaItems = MutableStateFlow<List<MediaItem>>(emptyList())
     private val _items = MutableStateFlow<List<MediaItem>>(emptyList())

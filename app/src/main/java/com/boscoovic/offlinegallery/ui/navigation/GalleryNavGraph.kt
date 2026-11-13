@@ -162,7 +162,12 @@ fun GalleryNavGraph(
                         navController.navigate(Screen.Editor.createRoute(id))
                     },
                     onSlideshowClick = {
-                        navController.navigate(Screen.Slideshow.createRoute())
+                        navController.navigate(
+                            Screen.Slideshow.createRoute(
+                                contextType = viewModel.viewerContextType,
+                                contextArg = viewModel.viewerContextArg
+                            )
+                        )
                     }
                 )
             }
