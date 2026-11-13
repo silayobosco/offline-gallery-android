@@ -60,11 +60,6 @@ class MediaStoreFetcher @Inject constructor(
         }
         val queryArgs = Bundle().apply {
             putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
-            putStringArray(
-                ContentResolver.QUERY_ARG_SORT_COLUMNS,
-                arrayOf(MediaStore.MediaColumns.DATE_MODIFIED)
-            )
-            putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
         }
         try {
             contentResolver.query(tableUri, projectionList.toTypedArray(), queryArgs, null)?.use { cursor ->

@@ -49,9 +49,17 @@ class MainActivity : FragmentActivity() {
 
             LaunchedEffect(repository) {
                 repository.pendingSystemRequest.collect { intentSender ->
-                    systemRequestLauncher.launch(
-                        IntentSenderRequest.Builder(intentSender).build()
-                    )
+                    try {
+                        systemRequestLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "System trash prompt failed: ${e.message}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
             }
 

@@ -9,7 +9,11 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
+import android.widget.Toast
 import androidx.exifinterface.media.ExifInterface
 import com.boscoovic.offlinegallery.data.local.dao.CustomAlbumDao
 import com.boscoovic.offlinegallery.data.local.dao.MediaMetaDao
@@ -198,7 +202,10 @@ class MediaRepositoryImpl @Inject constructor(
                     val pendingIntent = MediaStore.createTrashRequest(contentResolver, publicUris, true)
                     _pendingSystemRequest.emit(pendingIntent.intentSender)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("SystemTrash", "createTrashRequest(trash) failed", e)
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(context, "Trash error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                     return@withContext false
                 }
             } else {
