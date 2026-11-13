@@ -410,9 +410,9 @@ class MediaRepositoryImpl @Inject constructor(
                 list.filter { item ->
                     item.displayName.lowercase().contains(q) ||
                     item.bucketName.lowercase().contains(q) ||
-                    (q == "photo" || q == "photos" || q == "image" && item.mediaType == MediaType.IMAGE) ||
-                    (q == "video" || q == "videos" && item.mediaType == MediaType.VIDEO) ||
-                    (q == "favorite" || q == "favorites" && item.isFavorite)
+                    ((q == "photo" || q == "photos" || q == "image") && item.mediaType == MediaType.IMAGE) ||
+                    ((q == "video" || q == "videos") && item.mediaType == MediaType.VIDEO) ||
+                    ((q == "favorite" || q == "favorites") && item.isFavorite)
                 }
             }
         }.flowOn(Dispatchers.IO)

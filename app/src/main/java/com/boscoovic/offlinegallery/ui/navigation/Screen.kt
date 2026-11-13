@@ -4,6 +4,7 @@ sealed class Screen(val route: String) {
     data object Pictures : Screen("pictures")
     data object Albums : Screen("albums")
     data object Stories : Screen("stories")
+    data object Favorites : Screen("favorites")
     data object Search : Screen("search")
     data object RecycleBin : Screen("recycle_bin")
     data object SecureFolder : Screen("secure_folder")

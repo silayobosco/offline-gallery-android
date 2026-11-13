@@ -14,6 +14,8 @@ import com.boscoovic.offlinegallery.ui.screens.albums.AlbumDetailViewModel
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsViewModel
 import com.boscoovic.offlinegallery.ui.screens.editor.EditorScreen
 import com.boscoovic.offlinegallery.ui.screens.editor.EditorViewModel
+import com.boscoovic.offlinegallery.ui.screens.favorites.FavoritesScreen
+import com.boscoovic.offlinegallery.ui.screens.favorites.FavoritesViewModel
 import com.boscoovic.offlinegallery.ui.screens.main.MainGalleryScreen
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesViewModel
 import com.boscoovic.offlinegallery.ui.screens.recyclebin.RecycleBinScreen
@@ -55,7 +57,7 @@ fun GalleryNavGraph(
                     navController.navigate(Screen.AlbumDetail.createRoute(album.id, album.name, album.isCustom))
                 },
                 onFavoritesClick = {
-                    navController.navigate(Screen.Viewer.createRoute(0L, "FAVORITES", ""))
+                    navController.navigate(Screen.Favorites.route)
                 },
                 onSecureFolderClick = {
                     navController.navigate(Screen.SecureFolder.route)
@@ -118,6 +120,22 @@ fun GalleryNavGraph(
                     viewModel = viewModel,
                     onMediaClick = { item ->
                         navController.navigate(Screen.Viewer.createRoute(item.id, "ALL", ""))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // Favorites Screen
+            composable(Screen.Favorites.route) {
+                val viewModel: FavoritesViewModel = hiltViewModel()
+                FavoritesScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onMediaClick = { item ->
+                        navController.navigate(Screen.Viewer.createRoute(item.id, "FAVORITES", ""))
+                    },
+                    onSlideshowClick = {
+                        navController.navigate(Screen.Slideshow.createRoute("FAVORITES", ""))
                     }
                 )
             }

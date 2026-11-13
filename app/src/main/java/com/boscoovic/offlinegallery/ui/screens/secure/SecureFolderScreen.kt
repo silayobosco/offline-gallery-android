@@ -19,26 +19,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,8 +56,8 @@ import androidx.compose.ui.graphics.Color
 import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
+import com.boscoovic.offlinegallery.ui.components.OneUiCollapsibleHeader
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecureFolderScreen(
     viewModel: SecureFolderViewModel,
@@ -67,6 +67,12 @@ fun SecureFolderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val gridState = rememberLazyGridState()
+    val isScrolled by remember {
+        derivedStateOf {
+            gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 20
+        }
+    }
 
     val promptBiometric = {
         val activity = context as? FragmentActivity
@@ -104,13 +110,11 @@ fun SecureFolderScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text(stringResource(R.string.secure_folder)) },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
-            },
+        OneUiCollapsibleHeader(
+            title = stringResource(R.string.secure_folder),
+            subtitle = if (uiState.isUnlocked) "${uiState.items.size} hidden item(s)" else "Locked",
+            isScrolled = uiState.isUnlocked && isScrolled,
+            onBack = onBack,
             actions = {
                 if (uiState.isUnlocked) {
                     IconButton(onClick = { viewModel.lock() }) {
@@ -184,6 +188,7 @@ fun SecureFolderScreen(
                 }
             } else {
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(3),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
