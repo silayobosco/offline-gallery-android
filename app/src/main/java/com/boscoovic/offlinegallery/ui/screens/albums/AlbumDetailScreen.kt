@@ -11,6 +11,8 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -111,9 +113,13 @@ import coil.request.ImageRequest
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
+import com.boscoovic.offlinegallery.ui.components.FastScrollScrubber
 import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
+import com.boscoovic.offlinegallery.ui.components.MoveToAlbumDialog
 import com.boscoovic.offlinegallery.ui.components.SelectionActionBar
-import kotlin.math.pow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,8 +158,10 @@ fun AlbumDetailScreen(
     var showDetailsDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showMoveSelectedDialog by remember { mutableStateOf(false) }
     var renameAlbumName by remember { mutableStateOf("") }
     var gridColumns by remember { mutableIntStateOf(if (uiState.isSidebarVisible) 3 else 4) }
+    val dateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
 
     // Scroll to top whenever album changes
     LaunchedEffect(uiState.albumId) {
@@ -626,6 +634,18 @@ fun AlbumDetailScreen(
                                 }
                             }
                         }
+
+                        FastScrollScrubber(
+                            gridState = gridState,
+                            totalItemsCount = uiState.items.size,
+                            dateLabelProvider = { index ->
+                                val item = uiState.items.getOrNull(index.coerceIn(0, (uiState.items.size - 1).coerceAtLeast(0)))
+                                if (item != null) {
+                                    val timestamp = if (item.dateTaken > 0) item.dateTaken else item.dateAdded * 1000
+                                    if (timestamp > 0L) dateFormatter.format(Date(timestamp)) else ""
+                                } else ""
+                            }
+                        )
                     }
                 }
             }
@@ -634,19 +654,43 @@ fun AlbumDetailScreen(
         // Selection Action Bar floating at bottom
         AnimatedVisibility(
             visible = uiState.isSelectionMode,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             SelectionActionBar(
                 selectedCount = uiState.selectedItemIds.size,
                 onClose = { viewModel.clearSelection() },
                 onSelectAll = { viewModel.selectAll() },
-                onShare = { /* Share */ },
-                onFavorite = { /* Favorite */ },
-                onMove = { /* Move */ },
-                onHide = { /* Hide */ },
+                onShare = { viewModel.shareSelected() },
+                onFavorite = {
+                    viewModel.favoriteSelected { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onMove = { showMoveSelectedDialog = true },
+                onHide = {
+                    viewModel.hideSelected { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                },
                 onDelete = { viewModel.deleteSelected() }
+            )
+        }
+
+        if (showMoveSelectedDialog) {
+            MoveToAlbumDialog(
+                albums = uiState.allAlbums,
+                currentAlbumId = uiState.albumId,
+                selectedCount = uiState.selectedItemIds.size,
+                onAlbumSelected = { targetAlbum ->
+                    showMoveSelectedDialog = false
+                    val itemsToMove = uiState.items.filter { uiState.selectedItemIds.contains(it.id) }
+                    viewModel.moveOrAddItemsToAlbum(targetAlbum, itemsToMove) { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { showMoveSelectedDialog = false }
             )
         }
 

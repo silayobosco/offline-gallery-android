@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
@@ -136,6 +137,30 @@ class PicturesViewModel @Inject constructor(
         val itemsToHide = allItems.filter { selectedIds.contains(it.id) }
         viewModelScope.launch {
             repository.moveToSecureFolder(itemsToHide)
+            clearSelection()
+        }
+    }
+
+    fun moveSelectedToAlbum(
+        targetAlbum: Album,
+        allItems: List<MediaItem>,
+        onComplete: (String) -> Unit
+    ) {
+        val selectedIds = _selectedItemIds.value
+        val itemsToMove = allItems.filter { selectedIds.contains(it.id) }
+        if (itemsToMove.isEmpty()) return
+        viewModelScope.launch {
+            if (targetAlbum.isCustom) {
+                repository.addItemsToCustomAlbum(targetAlbum.id, itemsToMove.map { it.id })
+                onComplete("Added ${itemsToMove.size} item(s) to ${targetAlbum.name}")
+            } else {
+                val success = repository.moveMediaToAlbum(itemsToMove, targetAlbum)
+                if (success) {
+                    onComplete("Moved ${itemsToMove.size} item(s) to ${targetAlbum.name}")
+                } else {
+                    onComplete("Failed to move items to ${targetAlbum.name}")
+                }
+            }
             clearSelection()
         }
     }

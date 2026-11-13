@@ -1,5 +1,7 @@
 package com.boscoovic.offlinegallery.ui.screens.albums
 
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +10,7 @@ import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
 import com.boscoovic.offlinegallery.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +45,7 @@ data class AlbumDetailUiState(
 @HiltViewModel
 class AlbumDetailViewModel @Inject constructor(
     private val repository: MediaRepository,
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -122,6 +126,61 @@ class AlbumDetailViewModel @Inject constructor(
             repository.moveToTrash(itemsToDelete)
             clearSelection()
         }
+    }
+
+    fun favoriteSelected(onComplete: (String) -> Unit) {
+        val selected = _selectedItemIds.value
+        val itemsToFav = uiState.value.items.filter { selected.contains(it.id) }
+        if (itemsToFav.isEmpty()) return
+        val anyUnfavorited = itemsToFav.any { !it.isFavorite }
+        viewModelScope.launch {
+            for (item in itemsToFav) {
+                repository.toggleFavorite(item.id, anyUnfavorited)
+            }
+            val msg = if (anyUnfavorited) {
+                "Added ${itemsToFav.size} item(s) to Favorites"
+            } else {
+                "Removed ${itemsToFav.size} item(s) from Favorites"
+            }
+            onComplete(msg)
+            clearSelection()
+        }
+    }
+
+    fun hideSelected(onComplete: (String) -> Unit) {
+        val selected = _selectedItemIds.value
+        val itemsToHide = uiState.value.items.filter { selected.contains(it.id) }
+        if (itemsToHide.isEmpty()) return
+        viewModelScope.launch {
+            repository.moveToSecureFolder(itemsToHide)
+            onComplete("Moved ${itemsToHide.size} item(s) to Secure Folder")
+            clearSelection()
+        }
+    }
+
+    fun shareSelected() {
+        val selected = _selectedItemIds.value
+        val itemsToShare = uiState.value.items.filter { selected.contains(it.id) }
+        if (itemsToShare.isEmpty()) return
+
+        val uris = ArrayList(itemsToShare.map { it.uri })
+        val shareIntent = Intent().apply {
+            action = if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE
+            if (uris.size == 1) {
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+                type = itemsToShare[0].mimeType
+            } else {
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                type = "*/*"
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val chooser = Intent.createChooser(shareIntent, "Share media").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+        clearSelection()
     }
 
     fun moveOrAddItemsToAlbum(targetAlbum: Album, items: List<MediaItem>, onComplete: (String) -> Unit) {

@@ -1,5 +1,6 @@
 package com.boscoovic.offlinegallery.ui.screens.main
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -10,6 +11,8 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -97,7 +100,9 @@ import com.boscoovic.offlinegallery.R
 import com.boscoovic.offlinegallery.data.model.Album
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
+import com.boscoovic.offlinegallery.ui.components.FastScrollScrubber
 import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
+import com.boscoovic.offlinegallery.ui.components.MoveToAlbumDialog
 import com.boscoovic.offlinegallery.ui.components.SelectionActionBar
 import com.boscoovic.offlinegallery.ui.components.StickyDateHeader
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsUiState
@@ -105,6 +110,9 @@ import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsViewModel
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesUiState
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesViewModel
 import com.boscoovic.offlinegallery.ui.theme.FavoriteRed
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -450,6 +458,7 @@ fun MainGalleryScreen(
                 PicturesTabContent(
                     viewModel = picturesViewModel,
                     uiState = picturesState,
+                    albums = albumsState.albums,
                     gridState = picturesGridState,
                     onMediaClick = onMediaClick
                 )
@@ -472,12 +481,29 @@ fun MainGalleryScreen(
 private fun PicturesTabContent(
     viewModel: PicturesViewModel,
     uiState: PicturesUiState,
+    albums: List<Album>,
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     onMediaClick: (MediaItem) -> Unit
 ) {
+    val context = LocalContext.current
+    var showMoveDialog by remember { mutableStateOf(false) }
+
     val allItems = remember(uiState.dateGroups) {
         uiState.dateGroups.flatMap { it.items }
     }
+
+    // Flat index -> dateMillis lookup for FastScrollScrubber (including sticky headers + media items)
+    val indexDateMillisList = remember(uiState.dateGroups) {
+        buildList {
+            uiState.dateGroups.forEach { group ->
+                add(group.dateMillis) // header entry
+                repeat(group.items.size) {
+                    add(group.dateMillis)
+                }
+            }
+        }
+    }
+    val dateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
 
     Box(
         modifier = Modifier
@@ -559,47 +585,58 @@ private fun PicturesTabContent(
                     }
                 }
             } else {
-                LazyVerticalGrid(
-                    state = gridState,
-                    columns = GridCells.Fixed(uiState.columnCount),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    uiState.dateGroups.forEach { group ->
-                        val groupIds = group.items.map { it.id }.toSet()
-                        val isDaySelected = groupIds.isNotEmpty() && groupIds.all { uiState.selectedItemIds.contains(it) }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Fixed(uiState.columnCount),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        uiState.dateGroups.forEach { group ->
+                            val groupIds = group.items.map { it.id }.toSet()
+                            val isDaySelected = groupIds.isNotEmpty() && groupIds.all { uiState.selectedItemIds.contains(it) }
 
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            StickyDateHeader(
-                                dateMillis = group.dateMillis,
-                                itemCount = group.items.size,
-                                isSelectionMode = uiState.isSelectionMode,
-                                isAllSelected = isDaySelected,
-                                onSelectDayClick = { viewModel.toggleDaySelection(group) }
-                            )
-                        }
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                StickyDateHeader(
+                                    dateMillis = group.dateMillis,
+                                    itemCount = group.items.size,
+                                    isSelectionMode = uiState.isSelectionMode,
+                                    isAllSelected = isDaySelected,
+                                    onSelectDayClick = { viewModel.toggleDaySelection(group) }
+                                )
+                            }
 
-                        items(group.items, key = { it.id }) { item ->
-                            val isSelected = uiState.selectedItemIds.contains(item.id)
-                            MediaThumbnail(
-                                item = item,
-                                isSelectionMode = uiState.isSelectionMode,
-                                isSelected = isSelected,
-                                onClick = {
-                                    if (uiState.isSelectionMode) {
+                            items(group.items, key = { it.id }) { item ->
+                                val isSelected = uiState.selectedItemIds.contains(item.id)
+                                MediaThumbnail(
+                                    item = item,
+                                    isSelectionMode = uiState.isSelectionMode,
+                                    isSelected = isSelected,
+                                    onClick = {
+                                        if (uiState.isSelectionMode) {
+                                            viewModel.toggleItemSelection(item.id)
+                                        } else {
+                                            onMediaClick(item)
+                                        }
+                                    },
+                                    onLongClick = {
                                         viewModel.toggleItemSelection(item.id)
-                                    } else {
-                                        onMediaClick(item)
                                     }
-                                },
-                                onLongClick = {
-                                    viewModel.toggleItemSelection(item.id)
-                                }
-                            )
+                                )
+                            }
                         }
                     }
+
+                    FastScrollScrubber(
+                        gridState = gridState,
+                        totalItemsCount = indexDateMillisList.size,
+                        dateLabelProvider = { index ->
+                            val millis = indexDateMillisList.getOrNull(index.coerceIn(0, (indexDateMillisList.size - 1).coerceAtLeast(0)))
+                            if (millis != null && millis > 0L) dateFormatter.format(Date(millis)) else ""
+                        }
+                    )
                 }
             }
         }
@@ -607,8 +644,8 @@ private fun PicturesTabContent(
         // Selection Action Bar floating at bottom
         AnimatedVisibility(
             visible = uiState.isSelectionMode,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             SelectionActionBar(
@@ -616,10 +653,30 @@ private fun PicturesTabContent(
                 onClose = { viewModel.clearSelection() },
                 onSelectAll = { viewModel.selectAll(allItems) },
                 onShare = { viewModel.shareSelected(allItems) },
-                onFavorite = { viewModel.favoriteSelected(allItems) },
-                onMove = { /* Move */ },
-                onHide = { viewModel.hideSelected(allItems) },
+                onFavorite = {
+                    viewModel.favoriteSelected(allItems)
+                    Toast.makeText(context, "Updated favorites", Toast.LENGTH_SHORT).show()
+                },
+                onMove = { showMoveDialog = true },
+                onHide = {
+                    viewModel.hideSelected(allItems)
+                    Toast.makeText(context, "Moved to Secure Folder", Toast.LENGTH_SHORT).show()
+                },
                 onDelete = { viewModel.deleteSelected(allItems) }
+            )
+        }
+
+        if (showMoveDialog) {
+            MoveToAlbumDialog(
+                albums = albums,
+                selectedCount = uiState.selectedItemIds.size,
+                onAlbumSelected = { targetAlbum ->
+                    showMoveDialog = false
+                    viewModel.moveSelectedToAlbum(targetAlbum, allItems) { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { showMoveDialog = false }
             )
         }
     }
