@@ -1,5 +1,6 @@
 package com.boscoovic.offlinegallery.ui.screens.recyclebin
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -153,9 +154,14 @@ fun RecycleBinScreen(
                                 .clip(RoundedCornerShape(6.dp))
                                 .clickable { viewModel.toggleItemSelection(item.mediaId) }
                         ) {
+                            val imageData: Any = if (item.trashedFilePath.isNotEmpty()) {
+                                File(item.trashedFilePath)
+                            } else {
+                                Uri.parse(item.originalUri)
+                            }
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(File(item.trashedFilePath))
+                                    .data(imageData)
                                     .crossfade(true)
                                     .size(300)
                                     .build(),

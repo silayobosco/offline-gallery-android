@@ -1,12 +1,15 @@
 package com.boscoovic.offlinegallery.data.mediastore
 
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import com.boscoovic.offlinegallery.data.local.entity.TrashItemEntity
 import com.boscoovic.offlinegallery.data.model.ExifData
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import com.boscoovic.offlinegallery.data.model.MediaType
@@ -29,6 +32,88 @@ class MediaStoreFetcher @Inject constructor(
         mediaList.addAll(queryVideos())
         mediaList.sortByDescending { if (it.dateTaken > 0) it.dateTaken else it.dateAdded * 1000 }
         mediaList
+    }
+
+    suspend fun queryTrashedMedia(): List<TrashItemEntity> = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return@withContext emptyList()
+        val trashed = mutableListOf<TrashItemEntity>()
+        trashed.addAll(queryTrashedTable(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, isVideo = false))
+        trashed.addAll(queryTrashedTable(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, isVideo = true))
+        trashed.sortByDescending { it.trashedAt }
+        trashed
+    }
+
+    private fun queryTrashedTable(tableUri: Uri, isVideo: Boolean): List<TrashItemEntity> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
+        val items = mutableListOf<TrashItemEntity>()
+        val projectionList = mutableListOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DATA,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.DATE_EXPIRES
+        )
+        if (isVideo) {
+            projectionList.add(MediaStore.Video.Media.DURATION)
+        }
+        val queryArgs = Bundle().apply {
+            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+            putStringArray(
+                ContentResolver.QUERY_ARG_SORT_COLUMNS,
+                arrayOf(MediaStore.MediaColumns.DATE_MODIFIED)
+            )
+            putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+        }
+        try {
+            contentResolver.query(tableUri, projectionList.toTypedArray(), queryArgs, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val mimeCol = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val expCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_EXPIRES)
+                val durCol = if (isVideo) cursor.getColumnIndex(MediaStore.Video.Media.DURATION) else -1
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                    val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "TRASH_$id" else "TRASH_$id"
+                    val mime = if (mimeCol >= 0) {
+                        cursor.getString(mimeCol) ?: if (isVideo) "video/mp4" else "image/jpeg"
+                    } else if (isVideo) "video/mp4" else "image/jpeg"
+                    val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                    val modifiedSec = if (modCol >= 0) cursor.getLong(modCol) else (System.currentTimeMillis() / 1000L)
+                    val expiresSec = if (expCol >= 0) cursor.getLong(expCol) else 0L
+                    val durationMs = if (durCol >= 0) cursor.getLong(durCol) else 0L
+
+                    val trashedAtMs = modifiedSec * 1000L
+                    val expiresAtMs = if (expiresSec > 0L) expiresSec * 1000L else trashedAtMs + 30L * 24 * 60 * 60 * 1000L
+                    val uri = ContentUris.withAppendedId(tableUri, id)
+
+                    items.add(
+                        TrashItemEntity(
+                            mediaId = id,
+                            originalUri = uri.toString(),
+                            originalPath = path,
+                            trashedAt = trashedAtMs,
+                            expiresAt = expiresAtMs,
+                            displayName = name,
+                            mimeType = mime,
+                            mediaType = if (isVideo) MediaType.VIDEO.name else MediaType.IMAGE.name,
+                            size = size,
+                            durationMs = durationMs,
+                            trashedFilePath = "" // Empty path marks MediaStore System Trash item
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return items
     }
 
     suspend fun queryImages(bucketId: Long? = null): List<MediaItem> = withContext(Dispatchers.IO) {

@@ -1,5 +1,6 @@
 package com.boscoovic.offlinegallery.data.repository
 
+import android.content.IntentSender
 import android.graphics.Bitmap
 import android.net.Uri
 import com.boscoovic.offlinegallery.data.local.entity.RecentSearchEntity
@@ -9,8 +10,11 @@ import com.boscoovic.offlinegallery.data.model.ExifData
 import com.boscoovic.offlinegallery.data.model.MediaFilter
 import com.boscoovic.offlinegallery.data.model.MediaItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 
 interface MediaRepository {
+    val pendingSystemRequest: SharedFlow<IntentSender>
+    fun notifySystemRequestCompleted()
     fun getAllMedia(filter: MediaFilter = MediaFilter.ALL): Flow<List<MediaItem>>
     fun getAlbums(): Flow<List<Album>>
     fun getAlbumMedia(albumId: Long, isCustom: Boolean): Flow<List<MediaItem>>

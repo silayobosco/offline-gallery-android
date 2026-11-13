@@ -1,11 +1,15 @@
 package com.boscoovic.offlinegallery.ui
 
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -36,6 +40,20 @@ class MainActivity : FragmentActivity() {
         setContent {
             val themeMode by settingsManager.themeMode.collectAsState()
             val dynamicColor by settingsManager.dynamicColor.collectAsState()
+
+            val systemRequestLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartIntentSenderForResult()
+            ) {
+                repository.notifySystemRequestCompleted()
+            }
+
+            LaunchedEffect(repository) {
+                repository.pendingSystemRequest.collect { intentSender ->
+                    systemRequestLauncher.launch(
+                        IntentSenderRequest.Builder(intentSender).build()
+                    )
+                }
+            }
 
             val isDark = when (themeMode) {
                 ThemeMode.LIGHT -> false

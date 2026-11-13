@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -29,12 +30,16 @@ import com.boscoovic.offlinegallery.data.model.MediaType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -56,6 +61,15 @@ class MediaRepositoryImpl @Inject constructor(
 
     private val contentResolver = context.contentResolver
 
+    private val _pendingSystemRequest = MutableSharedFlow<IntentSender>(extraBufferCapacity = 4)
+    override val pendingSystemRequest: SharedFlow<IntentSender> = _pendingSystemRequest.asSharedFlow()
+
+    private val manualRefreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+
+    override fun notifySystemRequestCompleted() {
+        manualRefreshTrigger.tryEmit(Unit)
+    }
+
     private val trashDir: File by lazy {
         File(context.filesDir, "trash_bin").apply {
             if (!exists()) mkdirs()
@@ -63,7 +77,10 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override fun getAllMedia(filter: MediaFilter): Flow<List<MediaItem>> {
-        return observer.observeMedia().flatMapLatest {
+        return combine(
+            observer.observeMedia(),
+            manualRefreshTrigger.onStart { emit(Unit) }
+        ) { _, _ -> Unit }.flatMapLatest {
             flow {
                 val rawMedia = fetcher.queryAllMedia()
                 emit(rawMedia)
@@ -165,6 +182,54 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun moveToTrash(items: List<MediaItem>): Boolean = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext true
+
+        // On Android 11+ (API 30+), use System MediaStore Trash for public media so trash syncs with Google Photos / Google Gallery
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val secureItems = items.filter { it.isHidden }
+            val publicItems = items.filter { !it.isHidden }
+
+            // Handle any Secure Folder items via private trash
+            if (secureItems.isNotEmpty()) {
+                moveItemsToPrivateTrash(secureItems)
+            }
+
+            val pendingSystemUris = mutableListOf<Uri>()
+            for (item in publicItems) {
+                try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_TRASHED, 1)
+                    }
+                    val updated = contentResolver.update(item.uri, values, null, null)
+                    if (updated <= 0) {
+                        pendingSystemUris.add(item.uri)
+                    }
+                } catch (e: SecurityException) {
+                    pendingSystemUris.add(item.uri)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (pendingSystemUris.isNotEmpty()) {
+                try {
+                    val pendingIntent = MediaStore.createTrashRequest(contentResolver, pendingSystemUris, true)
+                    _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else {
+                manualRefreshTrigger.tryEmit(Unit)
+            }
+            return@withContext true
+        }
+
+        // Fallback for Android 10 (API 29)
+        moveItemsToPrivateTrash(items)
+        true
+    }
+
+    private suspend fun moveItemsToPrivateTrash(items: List<MediaItem>) {
         val now = System.currentTimeMillis()
         val expires = now + 30L * 24 * 60 * 60 * 1000 // 30 days retention
 
@@ -208,78 +273,192 @@ class MediaRepositoryImpl @Inject constructor(
                 e.printStackTrace()
             }
         }
-        true
     }
 
     override suspend fun restoreFromTrash(mediaIds: List<Long>): Boolean = withContext(Dispatchers.IO) {
+        if (mediaIds.isEmpty()) return@withContext true
+        val systemTrashedMap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            fetcher.queryTrashedMedia().associateBy { it.mediaId }
+        } else {
+            emptyMap()
+        }
+        val pendingRestoreUris = mutableListOf<Uri>()
+
         for (id in mediaIds) {
-            val trashItem = trashDao.getTrashItem(id) ?: continue
-            val trashFile = File(trashItem.trashedFilePath)
-            if (trashFile.exists()) {
-                val isVideo = trashItem.mediaType == MediaType.VIDEO.name
-                val tableUri = if (isVideo) {
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                } else {
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                }
-
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, trashItem.displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, trashItem.mimeType)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Restored")
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+            val privateItem = trashDao.getTrashItem(id)
+            if (privateItem != null && privateItem.trashedFilePath.isNotEmpty()) {
+                val trashFile = File(privateItem.trashedFilePath)
+                if (trashFile.exists()) {
+                    val isVideo = privateItem.mediaType == MediaType.VIDEO.name
+                    val tableUri = if (isVideo) {
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    } else {
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                     }
-                }
 
-                val newUri = contentResolver.insert(tableUri, values)
-                if (newUri != null) {
-                    contentResolver.openOutputStream(newUri)?.use { out ->
-                        trashFile.inputStream().use { input ->
-                            input.copyTo(out)
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, privateItem.displayName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, privateItem.mimeType)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Restored")
+                            put(MediaStore.MediaColumns.IS_PENDING, 1)
                         }
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        values.clear()
-                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        contentResolver.update(newUri, values, null, null)
+
+                    val newUri = contentResolver.insert(tableUri, values)
+                    if (newUri != null) {
+                        contentResolver.openOutputStream(newUri)?.use { out ->
+                            trashFile.inputStream().use { input ->
+                                input.copyTo(out)
+                            }
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            values.clear()
+                            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            contentResolver.update(newUri, values, null, null)
+                        }
+                        trashFile.delete()
+                        trashDao.delete(id)
                     }
-                    trashFile.delete()
-                    trashDao.delete(id)
+                }
+                continue
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val sysItem = systemTrashedMap[id] ?: continue
+                val uri = Uri.parse(sysItem.originalUri)
+                try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_TRASHED, 0)
+                    }
+                    val updated = contentResolver.update(uri, values, null, null)
+                    if (updated <= 0) {
+                        pendingRestoreUris.add(uri)
+                    }
+                } catch (e: SecurityException) {
+                    pendingRestoreUris.add(uri)
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pendingRestoreUris.isNotEmpty()) {
+            try {
+                val pendingIntent = MediaStore.createTrashRequest(contentResolver, pendingRestoreUris, false)
+                _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            manualRefreshTrigger.tryEmit(Unit)
         }
         true
     }
 
     override suspend fun permanentDeleteFromTrash(mediaIds: List<Long>): Boolean = withContext(Dispatchers.IO) {
+        if (mediaIds.isEmpty()) return@withContext true
+        val systemTrashedMap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            fetcher.queryTrashedMedia().associateBy { it.mediaId }
+        } else {
+            emptyMap()
+        }
+        val pendingDeleteUris = mutableListOf<Uri>()
+
         for (id in mediaIds) {
-            val item = trashDao.getTrashItem(id)
-            if (item != null) {
-                val file = File(item.trashedFilePath)
-                if (file.exists()) {
-                    file.delete()
+            val privateItem = trashDao.getTrashItem(id)
+            if (privateItem != null) {
+                if (privateItem.trashedFilePath.isNotEmpty()) {
+                    val file = File(privateItem.trashedFilePath)
+                    if (file.exists()) file.delete()
                 }
                 trashDao.delete(id)
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val sysItem = systemTrashedMap[id]
+                if (sysItem != null) {
+                    val uri = Uri.parse(sysItem.originalUri)
+                    try {
+                        val deleted = contentResolver.delete(uri, null, null)
+                        if (deleted <= 0) {
+                            pendingDeleteUris.add(uri)
+                        }
+                    } catch (e: SecurityException) {
+                        pendingDeleteUris.add(uri)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pendingDeleteUris.isNotEmpty()) {
+            try {
+                val pendingIntent = MediaStore.createDeleteRequest(contentResolver, pendingDeleteUris)
+                _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            manualRefreshTrigger.tryEmit(Unit)
         }
         true
     }
 
     override suspend fun emptyTrash(): Boolean = withContext(Dispatchers.IO) {
-        val allItems = trashDao.getAllTrashItems().first()
-        for (item in allItems) {
-            val file = File(item.trashedFilePath)
-            if (file.exists()) {
-                file.delete()
+        val allPrivateItems = trashDao.getAllTrashItems().first()
+        for (item in allPrivateItems) {
+            if (item.trashedFilePath.isNotEmpty()) {
+                val file = File(item.trashedFilePath)
+                if (file.exists()) file.delete()
             }
         }
         trashDao.clearAll()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val systemItems = fetcher.queryTrashedMedia()
+            val pendingDeleteUris = mutableListOf<Uri>()
+            for (sysItem in systemItems) {
+                val uri = Uri.parse(sysItem.originalUri)
+                try {
+                    val deleted = contentResolver.delete(uri, null, null)
+                    if (deleted <= 0) {
+                        pendingDeleteUris.add(uri)
+                    }
+                } catch (e: SecurityException) {
+                    pendingDeleteUris.add(uri)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            if (pendingDeleteUris.isNotEmpty()) {
+                try {
+                    val pendingIntent = MediaStore.createDeleteRequest(contentResolver, pendingDeleteUris)
+                    _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else {
+                manualRefreshTrigger.tryEmit(Unit)
+            }
+        }
         true
     }
 
     override fun getTrashItems(): Flow<List<TrashItemEntity>> {
-        return trashDao.getAllTrashItems().flowOn(Dispatchers.IO)
+        val systemTrashFlow = combine(
+            observer.observeMedia(),
+            manualRefreshTrigger.onStart { emit(Unit) }
+        ) { _, _ -> Unit }.flatMapLatest {
+            flow {
+                emit(fetcher.queryTrashedMedia())
+            }
+        }
+        return combine(systemTrashFlow, trashDao.getAllTrashItems()) { sysItems, privateItems ->
+            val seenIds = sysItems.map { it.mediaId }.toHashSet()
+            val combined = sysItems + privateItems.filter { !seenIds.contains(it.mediaId) }
+            combined.sortedByDescending { it.trashedAt }
+        }.flowOn(Dispatchers.IO)
     }
 
     override suspend fun moveToSecureFolder(items: List<MediaItem>): Boolean = withContext(Dispatchers.IO) {
