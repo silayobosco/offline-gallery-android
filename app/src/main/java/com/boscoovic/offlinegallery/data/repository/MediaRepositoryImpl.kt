@@ -184,39 +184,22 @@ class MediaRepositoryImpl @Inject constructor(
     override suspend fun moveToTrash(items: List<MediaItem>): Boolean = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext true
 
-        // On Android 11+ (API 30+), use System MediaStore Trash for public media so trash syncs with Google Photos / Google Gallery
+        // On Android 11+ (API 30+), use MediaStore.createTrashRequest so trash syncs with System Trash / Google Photos
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val secureItems = items.filter { it.isHidden }
-            val publicItems = items.filter { !it.isHidden }
+            val publicUris = items.filter { !it.isHidden }.map { it.uri }
 
-            // Handle any Secure Folder items via private trash
             if (secureItems.isNotEmpty()) {
                 moveItemsToPrivateTrash(secureItems)
             }
 
-            val pendingSystemUris = mutableListOf<Uri>()
-            for (item in publicItems) {
+            if (publicUris.isNotEmpty()) {
                 try {
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.IS_TRASHED, 1)
-                    }
-                    val updated = contentResolver.update(item.uri, values, null, null)
-                    if (updated <= 0) {
-                        pendingSystemUris.add(item.uri)
-                    }
-                } catch (e: SecurityException) {
-                    pendingSystemUris.add(item.uri)
+                    val pendingIntent = MediaStore.createTrashRequest(contentResolver, publicUris, true)
+                    _pendingSystemRequest.emit(pendingIntent.intentSender)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                }
-            }
-
-            if (pendingSystemUris.isNotEmpty()) {
-                try {
-                    val pendingIntent = MediaStore.createTrashRequest(contentResolver, pendingSystemUris, true)
-                    _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    return@withContext false
                 }
             } else {
                 manualRefreshTrigger.tryEmit(Unit)
@@ -326,29 +309,17 @@ class MediaRepositoryImpl @Inject constructor(
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val sysItem = systemTrashedMap[id] ?: continue
-                val uri = Uri.parse(sysItem.originalUri)
-                try {
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.IS_TRASHED, 0)
-                    }
-                    val updated = contentResolver.update(uri, values, null, null)
-                    if (updated <= 0) {
-                        pendingRestoreUris.add(uri)
-                    }
-                } catch (e: SecurityException) {
-                    pendingRestoreUris.add(uri)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                pendingRestoreUris.add(Uri.parse(sysItem.originalUri))
             }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pendingRestoreUris.isNotEmpty()) {
             try {
                 val pendingIntent = MediaStore.createTrashRequest(contentResolver, pendingRestoreUris, false)
-                _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+                _pendingSystemRequest.emit(pendingIntent.intentSender)
             } catch (e: Exception) {
                 e.printStackTrace()
+                return@withContext false
             }
         } else {
             manualRefreshTrigger.tryEmit(Unit)
@@ -377,17 +348,7 @@ class MediaRepositoryImpl @Inject constructor(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val sysItem = systemTrashedMap[id]
                 if (sysItem != null) {
-                    val uri = Uri.parse(sysItem.originalUri)
-                    try {
-                        val deleted = contentResolver.delete(uri, null, null)
-                        if (deleted <= 0) {
-                            pendingDeleteUris.add(uri)
-                        }
-                    } catch (e: SecurityException) {
-                        pendingDeleteUris.add(uri)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    pendingDeleteUris.add(Uri.parse(sysItem.originalUri))
                 }
             }
         }
@@ -395,9 +356,10 @@ class MediaRepositoryImpl @Inject constructor(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pendingDeleteUris.isNotEmpty()) {
             try {
                 val pendingIntent = MediaStore.createDeleteRequest(contentResolver, pendingDeleteUris)
-                _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
+                _pendingSystemRequest.emit(pendingIntent.intentSender)
             } catch (e: Exception) {
                 e.printStackTrace()
+                return@withContext false
             }
         } else {
             manualRefreshTrigger.tryEmit(Unit)
@@ -416,27 +378,14 @@ class MediaRepositoryImpl @Inject constructor(
         trashDao.clearAll()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val systemItems = fetcher.queryTrashedMedia()
-            val pendingDeleteUris = mutableListOf<Uri>()
-            for (sysItem in systemItems) {
-                val uri = Uri.parse(sysItem.originalUri)
+            val systemUris = fetcher.queryTrashedMedia().map { Uri.parse(it.originalUri) }
+            if (systemUris.isNotEmpty()) {
                 try {
-                    val deleted = contentResolver.delete(uri, null, null)
-                    if (deleted <= 0) {
-                        pendingDeleteUris.add(uri)
-                    }
-                } catch (e: SecurityException) {
-                    pendingDeleteUris.add(uri)
+                    val pendingIntent = MediaStore.createDeleteRequest(contentResolver, systemUris)
+                    _pendingSystemRequest.emit(pendingIntent.intentSender)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                }
-            }
-            if (pendingDeleteUris.isNotEmpty()) {
-                try {
-                    val pendingIntent = MediaStore.createDeleteRequest(contentResolver, pendingDeleteUris)
-                    _pendingSystemRequest.tryEmit(pendingIntent.intentSender)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    return@withContext false
                 }
             } else {
                 manualRefreshTrigger.tryEmit(Unit)
