@@ -105,6 +105,7 @@ import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
 import com.boscoovic.offlinegallery.ui.components.MoveToAlbumDialog
 import com.boscoovic.offlinegallery.ui.components.SelectionActionBar
 import com.boscoovic.offlinegallery.ui.components.StickyDateHeader
+import com.boscoovic.offlinegallery.ui.components.dragSelectGrid
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsUiState
 import com.boscoovic.offlinegallery.ui.screens.albums.AlbumsViewModel
 import com.boscoovic.offlinegallery.ui.screens.pictures.PicturesUiState
@@ -585,6 +586,7 @@ private fun PicturesTabContent(
                     }
                 }
             } else {
+                val orderedIds = remember(allItems) { allItems.map { it.id } }
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyVerticalGrid(
                         state = gridState,
@@ -592,7 +594,14 @@ private fun PicturesTabContent(
                         contentPadding = PaddingValues(bottom = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .dragSelectGrid(
+                                gridState = gridState,
+                                orderedIds = orderedIds,
+                                selectedIds = uiState.selectedItemIds,
+                                onSelectionChanged = { viewModel.setSelection(it) }
+                            )
                     ) {
                         uiState.dateGroups.forEach { group ->
                             val groupIds = group.items.map { it.id }.toSet()
@@ -621,9 +630,7 @@ private fun PicturesTabContent(
                                             onMediaClick(item)
                                         }
                                     },
-                                    onLongClick = {
-                                        viewModel.toggleItemSelection(item.id)
-                                    }
+                                    onLongClick = null
                                 )
                             }
                         }

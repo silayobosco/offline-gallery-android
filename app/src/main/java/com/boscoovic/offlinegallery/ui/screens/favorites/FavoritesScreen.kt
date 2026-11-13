@@ -46,6 +46,7 @@ import com.boscoovic.offlinegallery.ui.components.MediaThumbnail
 import com.boscoovic.offlinegallery.ui.components.MoveToAlbumDialog
 import com.boscoovic.offlinegallery.ui.components.OneUiCollapsibleHeader
 import com.boscoovic.offlinegallery.ui.components.SelectionActionBar
+import com.boscoovic.offlinegallery.ui.components.dragSelectGrid
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -113,6 +114,7 @@ fun FavoritesScreen(
                     }
                 }
             } else {
+                val orderedIds = remember(uiState.items) { uiState.items.map { it.id } }
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyVerticalGrid(
                         state = gridState,
@@ -120,7 +122,14 @@ fun FavoritesScreen(
                         contentPadding = PaddingValues(start = 2.dp, end = 2.dp, top = 2.dp, bottom = 96.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .dragSelectGrid(
+                                gridState = gridState,
+                                orderedIds = orderedIds,
+                                selectedIds = uiState.selectedItemIds,
+                                onSelectionChanged = { viewModel.setSelection(it) }
+                            )
                     ) {
                         items(uiState.items, key = { it.id }) { item ->
                             MediaThumbnail(
@@ -134,9 +143,7 @@ fun FavoritesScreen(
                                         onMediaClick(item)
                                     }
                                 },
-                                onLongClick = {
-                                    viewModel.toggleItemSelection(item.id)
-                                }
+                                onLongClick = null
                             )
                         }
                     }

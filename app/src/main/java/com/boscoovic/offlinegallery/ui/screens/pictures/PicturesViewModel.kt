@@ -107,6 +107,10 @@ class PicturesViewModel @Inject constructor(
         _selectedItemIds.value = allItems.map { it.id }.toSet()
     }
 
+    fun setSelection(ids: Set<Long>) {
+        _selectedItemIds.value = ids
+    }
+
     fun clearSelection() {
         _selectedItemIds.value = emptySet()
     }

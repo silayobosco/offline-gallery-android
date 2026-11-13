@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.AlertDialog
@@ -192,6 +193,7 @@ fun MediaViewerScreen(
     var feedbackNotice by remember { mutableStateOf<String?>(null) }
     var showQueueMenu by remember { mutableStateOf(false) }
     var isMuted by rememberSaveable { mutableStateOf(false) }
+    var showFilmstrip by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(feedbackNotice) {
         if (feedbackNotice != null) {
@@ -606,6 +608,31 @@ fun MediaViewerScreen(
                             }
                         )
 
+                        // 5. Thumbnail Filmstrip visibility toggle
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Thumbnail Strip", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (showFilmstrip) "Visible" else "Hidden",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (showFilmstrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ViewCarousel,
+                                    contentDescription = null,
+                                    tint = if (showFilmstrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {
+                                showFilmstrip = !showFilmstrip
+                                feedbackNotice = if (showFilmstrip) "Thumbnail strip shown" else "Thumbnail strip hidden"
+                            }
+                        )
+
                         HorizontalDivider()
 
                         // 5. Start Slideshow
@@ -684,7 +711,12 @@ fun MediaViewerScreen(
                 .navigationBarsPadding()
                 .padding(
                     end = 16.dp,
-                    bottom = if (currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L) 220.dp else 164.dp
+                    bottom = when {
+                        currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L && showFilmstrip -> 220.dp
+                        currentItem?.mediaType == MediaType.VIDEO && videoDuration > 0L -> 156.dp
+                        showFilmstrip -> 164.dp
+                        else -> 100.dp
+                    }
                 )
         ) {
             Column(
@@ -809,7 +841,7 @@ fun MediaViewerScreen(
                 // Mini Thumbnail Filmstrip in Vertical Mode
                 if (uiState.items.size > 1) {
                     AnimatedVisibility(
-                        visible = uiState.isChromeVisible,
+                        visible = showFilmstrip && uiState.isChromeVisible,
                         enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
                         exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
                         modifier = Modifier.fillMaxWidth()
@@ -954,10 +986,10 @@ fun MediaViewerScreen(
                     }
                 }
 
-                // Mini Thumbnail Filmstrip (Horizontal mode only, synced with pagerState)
+                // Mini Thumbnail Filmstrip (Horizontal mode, synced with pagerState)
                 if (uiState.items.size > 1) {
                     AnimatedVisibility(
-                        visible = uiState.isChromeVisible,
+                        visible = showFilmstrip && uiState.isChromeVisible,
                         enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
                         exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
                         modifier = Modifier.fillMaxWidth()
